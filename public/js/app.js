@@ -96,6 +96,7 @@ function bindLoginHandlers() {
 
   document.getElementById('btn-setup-signet')?.addEventListener('click', () => {
     if (Nip07Backend.isAvailable()) {
+      showStatus('Requesting signature...');
       loginWithBackend(Nip07Backend).catch(err => showStatus(escapeHtml(err.message)));
     } else {
       showSignetSetupGuide();
@@ -209,17 +210,16 @@ function showSignetSetupGuide() {
       <div style="margin-bottom:1rem;padding:0.75rem;background:#0f172a;border-radius:8px;border-left:3px solid #059669;">
         <strong style="color:#d8f3dc;">3.</strong> Give your persona&rsquo;s public key to your club admin so they can register you
       </div>
-      <div style="margin-bottom:1rem;padding:0.75rem;background:#0f172a;border-radius:8px;border-left:3px solid #059669;">
-        <strong style="color:#d8f3dc;">4.</strong> Come back here and sign in
-      </div>
       <p style="margin-top:1rem;font-size:0.85rem;color:#64748b;">Already have a Nostr key? You can also use a <a href="#" id="link-advanced" style="color:#64748b;text-decoration:underline;">browser extension or remote signer</a>.</p>
     </div>
-    <button id="btn-back" style="background:transparent;color:#64748b;width:100%;padding:0.5rem;border:none;cursor:pointer;margin-top:1rem;">Back</button>`;
+    <button id="btn-try-signin" style="background:#059669;color:white;width:100%;padding:1rem;font-size:1rem;border:none;border-radius:8px;cursor:pointer;margin-top:0.5rem;">Ready? Sign In</button>
+    <button id="btn-back" style="background:transparent;color:#64748b;width:100%;padding:0.5rem;border:none;cursor:pointer;margin-top:0.5rem;">Back to sign in</button>`;
 
   document.getElementById('link-advanced')?.addEventListener('click', (e) => {
     e.preventDefault();
     showMethodPicker();
   });
+  document.getElementById('btn-try-signin')?.addEventListener('click', () => showLoginScreen());
   document.getElementById('btn-back')?.addEventListener('click', () => showLoginScreen());
 }
 

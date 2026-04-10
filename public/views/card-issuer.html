@@ -1,0 +1,106 @@
+<div class="card-issuer">
+    <!-- Scanner mode -->
+    <div id="ci-scanner-mode">
+        <div class="camera-area">
+            <video id="ci-video" playsinline autoplay muted></video>
+        </div>
+        <div style="padding:1rem;text-align:center;background:#0f172a;">
+            <button class="btn" style="background:#d97706;color:white;width:100%;" onclick="showUnlinkedForm()">Can't Scan — Issue Unlinked Card</button>
+        </div>
+    </div>
+
+    <!-- Fan identified — show status + card form -->
+    <div id="ci-fan-info" style="display:none;padding:1.5rem;background:#0f172a;color:#95d5b2;min-height:100vh;">
+        <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1.5rem;">
+            <img id="ci-fan-photo" style="width:80px;height:80px;border-radius:12px;object-fit:cover;border:3px solid rgba(255,255,255,0.3);">
+            <div>
+                <div id="ci-fan-status" style="font-size:1.5rem;font-weight:900;"></div>
+                <div id="ci-fan-detail" style="font-size:0.9rem;opacity:0.7;"></div>
+            </div>
+        </div>
+
+        <div id="ci-card-form">
+            <div style="margin-bottom:1rem;">
+                <label style="font-size:0.8rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;display:block;margin-bottom:0.5rem;">Card Type</label>
+                <div style="display:flex;gap:0.5rem;">
+                    <button class="btn ci-type-btn" data-type="yellow" style="flex:1;background:#eab308;color:#0f172a;" onclick="selectCardType('yellow')">YELLOW</button>
+                    <button class="btn ci-type-btn" data-type="red" style="flex:1;background:#dc2626;color:white;" onclick="selectCardType('red')">RED</button>
+                </div>
+            </div>
+
+            <div style="margin-bottom:1rem;">
+                <label style="font-size:0.8rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;display:block;margin-bottom:0.5rem;">Category</label>
+                <select id="ci-category" style="width:100%;padding:0.75rem;font-size:1rem;border-radius:8px;border:none;background:#1e293b;color:#95d5b2;">
+                    <option value="">Select category...</option>
+                    <option value="Verbal abuse (toward steward)">Verbal abuse (toward steward)</option>
+                    <option value="Verbal abuse (toward other fans)">Verbal abuse (toward other fans)</option>
+                    <option value="Verbal abuse (toward players/officials)">Verbal abuse (toward players/officials)</option>
+                    <option value="Discriminatory behaviour">Discriminatory behaviour</option>
+                    <option value="Pyrotechnics / missiles">Pyrotechnics / missiles</option>
+                    <option value="Persistent standing (where not permitted)">Persistent standing</option>
+                    <option value="Alcohol violation">Alcohol violation</option>
+                    <option value="Other">Other</option>
+                </select>
+            </div>
+
+            <div style="margin-bottom:1rem;">
+                <label style="font-size:0.8rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;display:block;margin-bottom:0.5rem;">Notes (optional, max 280)</label>
+                <textarea id="ci-notes" maxlength="280" rows="2" style="width:100%;padding:0.75rem;font-size:1rem;border-radius:8px;border:none;background:#1e293b;color:#95d5b2;resize:none;"></textarea>
+            </div>
+
+            <div style="margin-bottom:1rem;">
+                <label style="font-size:0.8rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;display:block;margin-bottom:0.5rem;">Seat / Location (optional)</label>
+                <input id="ci-seat" type="text" style="width:100%;padding:0.75rem;font-size:1rem;border-radius:8px;border:none;background:#1e293b;color:#95d5b2;">
+            </div>
+
+            <button id="ci-submit" class="btn" style="width:100%;background:#059669;color:white;margin-bottom:0.5rem;" onclick="submitCard()">Issue Card</button>
+            <button class="btn" style="width:100%;background:transparent;color:#64748b;border:1px solid #64748b;" onclick="cancelCard()">Cancel</button>
+
+            <div id="ci-auto-red-warning" style="display:none;margin-top:1rem;padding:1rem;background:#fee2e2;border-radius:8px;color:#dc2626;font-weight:700;text-align:center;">
+                This yellow will trigger an AUTOMATIC RED CARD (2 yellows)
+            </div>
+        </div>
+    </div>
+
+    <!-- Unlinked card form -->
+    <div id="ci-unlinked-form" style="display:none;padding:1.5rem;background:#0f172a;color:#95d5b2;min-height:100vh;">
+        <h2 style="font-family:Georgia,serif;margin-bottom:1rem;">Unlinked Card</h2>
+        <p style="font-size:0.9rem;opacity:0.7;margin-bottom:1.5rem;">Fan did not present their credential. Describe them so the safety officer can match later.</p>
+
+        <div style="margin-bottom:1rem;">
+            <label style="font-size:0.8rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;display:block;margin-bottom:0.5rem;">Description (required)</label>
+            <textarea id="ci-ul-description" rows="3" placeholder="Physical description, clothing, section..." style="width:100%;padding:0.75rem;font-size:1rem;border-radius:8px;border:none;background:#1e293b;color:#95d5b2;resize:none;"></textarea>
+        </div>
+
+        <div style="margin-bottom:1rem;">
+            <label style="font-size:0.8rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;display:block;margin-bottom:0.5rem;">Category</label>
+            <select id="ci-ul-category" style="width:100%;padding:0.75rem;font-size:1rem;border-radius:8px;border:none;background:#1e293b;color:#95d5b2;">
+                <option value="">Select category...</option>
+                <option value="Verbal abuse (toward steward)">Verbal abuse (toward steward)</option>
+                <option value="Verbal abuse (toward other fans)">Verbal abuse (toward other fans)</option>
+                <option value="Verbal abuse (toward players/officials)">Verbal abuse (toward players/officials)</option>
+                <option value="Discriminatory behaviour">Discriminatory behaviour</option>
+                <option value="Pyrotechnics / missiles">Pyrotechnics / missiles</option>
+                <option value="Persistent standing (where not permitted)">Persistent standing</option>
+                <option value="Alcohol violation">Alcohol violation</option>
+                <option value="Other">Other</option>
+            </select>
+        </div>
+
+        <div style="margin-bottom:1rem;">
+            <label style="font-size:0.8rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;display:block;margin-bottom:0.5rem;">Seat / Location</label>
+            <input id="ci-ul-seat" type="text" style="width:100%;padding:0.75rem;font-size:1rem;border-radius:8px;border:none;background:#1e293b;color:#95d5b2;">
+        </div>
+
+        <button class="btn" style="width:100%;background:#d97706;color:white;margin-bottom:0.5rem;" onclick="submitUnlinked()">Issue Unlinked Card</button>
+        <button class="btn" style="width:100%;background:transparent;color:#64748b;border:1px solid #64748b;" onclick="cancelUnlinked()">Cancel</button>
+    </div>
+
+    <div id="ci-result" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;display:none;align-items:center;justify-content:center;z-index:20;padding:2rem;">
+        <div style="text-align:center;">
+            <div id="ci-result-text" style="font-size:2rem;font-weight:900;color:white;"></div>
+            <div id="ci-result-detail" style="font-size:1rem;color:rgba(255,255,255,0.8);margin-top:0.5rem;"></div>
+        </div>
+    </div>
+</div>
+<div class="offline-badge" id="offline-badge">OFFLINE</div>

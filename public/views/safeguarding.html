@@ -1,0 +1,67 @@
+<div style="background:#0f172a;color:#95d5b2;min-height:100vh;padding:1.5rem;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+    <div style="max-width:600px;margin:0 auto;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;">
+            <h1 style="font-family:Georgia,serif;font-size:1.5rem;color:#d8f3dc;">Safeguarding</h1>
+            <button style="background:transparent;color:#64748b;border:1px solid #64748b;padding:0.5rem 1rem;border-radius:8px;cursor:pointer;font-size:0.8rem;" onclick="localStorage.removeItem('mp_role');location.reload();">Back</button>
+        </div>
+
+        <!-- Step 1: Scan parent -->
+        <div id="sg-step-parent" class="sg-step">
+            <h2 style="font-family:Georgia,serif;font-size:1.2rem;color:#d8f3dc;margin-bottom:1rem;">Step 1: Scan Parent/Guardian</h2>
+            <div class="camera-area" style="height:300px;border-radius:12px;overflow:hidden;margin-bottom:1rem;">
+                <video id="sg-parent-video" playsinline autoplay muted style="width:100%;height:100%;object-fit:cover;"></video>
+            </div>
+        </div>
+
+        <!-- Step 2: Scan child -->
+        <div id="sg-step-child" class="sg-step" style="display:none;">
+            <h2 style="font-family:Georgia,serif;font-size:1.2rem;color:#d8f3dc;margin-bottom:1rem;">Step 2: Scan Child</h2>
+            <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;padding:1rem;background:#1e293b;border-radius:8px;">
+                <img id="sg-parent-photo" style="width:60px;height:60px;border-radius:8px;object-fit:cover;">
+                <div>
+                    <div style="font-weight:700;color:#d8f3dc;">Parent scanned</div>
+                    <div id="sg-parent-pubkey" style="font-size:0.75rem;color:#64748b;font-family:monospace;"></div>
+                </div>
+            </div>
+            <div class="camera-area" style="height:300px;border-radius:12px;overflow:hidden;margin-bottom:1rem;">
+                <video id="sg-child-video" playsinline autoplay muted style="width:100%;height:100%;object-fit:cover;"></video>
+            </div>
+        </div>
+
+        <!-- Step 3: Confirm -->
+        <div id="sg-step-confirm" class="sg-step" style="display:none;">
+            <h2 style="font-family:Georgia,serif;font-size:1.2rem;color:#d8f3dc;margin-bottom:1rem;">Step 3: Verify Relationship</h2>
+            <div style="display:flex;gap:1rem;margin-bottom:1.5rem;">
+                <div style="flex:1;text-align:center;">
+                    <img id="sg-confirm-parent" style="width:80px;height:80px;border-radius:12px;object-fit:cover;border:3px solid #059669;">
+                    <div style="font-size:0.8rem;color:#64748b;margin-top:0.5rem;">Parent/Guardian</div>
+                </div>
+                <div style="flex:1;text-align:center;">
+                    <img id="sg-confirm-child" style="width:80px;height:80px;border-radius:12px;object-fit:cover;border:3px solid #d97706;">
+                    <div style="font-size:0.8rem;color:#64748b;margin-top:0.5rem;">Child</div>
+                </div>
+            </div>
+            <div style="margin-bottom:1rem;">
+                <label style="font-size:0.8rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;display:block;margin-bottom:0.5rem;">Relationship</label>
+                <select id="sg-relationship" style="width:100%;padding:0.75rem;font-size:1rem;border-radius:8px;border:none;background:#1e293b;color:#95d5b2;">
+                    <option value="parent">Parent</option>
+                    <option value="guardian">Guardian</option>
+                    <option value="other">Other</option>
+                </select>
+            </div>
+            <button class="btn" style="width:100%;background:#059669;color:white;margin-bottom:0.5rem;" onclick="confirmLinkage()">Verify Linkage</button>
+            <button class="btn" style="width:100%;background:transparent;color:#64748b;border:1px solid #64748b;" onclick="resetSafeguarding()">Start Over</button>
+        </div>
+
+        <!-- Result -->
+        <div id="sg-result" style="display:none;padding:2rem;text-align:center;background:#059669;border-radius:12px;margin-bottom:1.5rem;">
+            <div style="font-size:1.5rem;font-weight:900;color:white;">LINKAGE VERIFIED</div>
+            <div style="font-size:0.9rem;color:rgba(255,255,255,0.8);margin-top:0.5rem;">Parent-child linkage active</div>
+        </div>
+
+        <!-- Existing linkages -->
+        <h3 style="font-family:Georgia,serif;font-size:1.1rem;color:#d8f3dc;margin:1.5rem 0 0.75rem;">Verified Linkages</h3>
+        <div id="sg-linkages-list"></div>
+    </div>
+</div>
+<div class="offline-badge" id="offline-badge">OFFLINE</div>

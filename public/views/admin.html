@@ -1,0 +1,53 @@
+<div style="background:#0f172a;color:#95d5b2;min-height:100vh;padding:1.5rem;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+    <div style="max-width:700px;margin:0 auto;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;">
+            <h1 style="font-family:Georgia,serif;font-size:1.5rem;color:#d8f3dc;">Club Admin</h1>
+            <button style="background:transparent;color:#64748b;border:1px solid #64748b;padding:0.5rem 1rem;border-radius:8px;cursor:pointer;font-size:0.8rem;" onclick="localStorage.removeItem('mp_role');location.reload();">Back</button>
+        </div>
+
+        <!-- Club Profile -->
+        <div style="background:#1e293b;padding:1.5rem;border-radius:12px;margin-bottom:1.5rem;">
+            <h2 style="font-family:Georgia,serif;font-size:1.1rem;color:#d8f3dc;margin-bottom:1rem;">Club Profile</h2>
+            <div style="display:flex;flex-direction:column;gap:0.75rem;">
+                <input id="admin-name" type="text" placeholder="Club name" style="width:100%;padding:0.75rem;font-size:1rem;border-radius:8px;border:none;background:#0f172a;color:#95d5b2;">
+                <input id="admin-ground" type="text" placeholder="Ground name" style="width:100%;padding:0.75rem;font-size:1rem;border-radius:8px;border:none;background:#0f172a;color:#95d5b2;">
+                <input id="admin-league" type="text" placeholder="League" style="width:100%;padding:0.75rem;font-size:1rem;border-radius:8px;border:none;background:#0f172a;color:#95d5b2;">
+                <input id="admin-fa" type="text" placeholder="FA affiliation number (optional)" style="width:100%;padding:0.75rem;font-size:1rem;border-radius:8px;border:none;background:#0f172a;color:#95d5b2;">
+                <button class="btn" style="background:#059669;color:white;" onclick="saveClub()">Save Club Profile</button>
+            </div>
+        </div>
+
+        <!-- Season -->
+        <div style="background:#1e293b;padding:1.5rem;border-radius:12px;margin-bottom:1.5rem;">
+            <h2 style="font-family:Georgia,serif;font-size:1.1rem;color:#d8f3dc;margin-bottom:1rem;">Season</h2>
+            <div id="admin-active-season" style="margin-bottom:1rem;"></div>
+            <div style="display:flex;flex-direction:column;gap:0.75rem;">
+                <input id="admin-season-name" type="text" placeholder="Season name (e.g. 2026/27)" style="width:100%;padding:0.75rem;font-size:1rem;border-radius:8px;border:none;background:#0f172a;color:#95d5b2;">
+                <div style="display:flex;gap:0.5rem;">
+                    <input id="admin-season-start" type="date" style="flex:1;padding:0.75rem;font-size:1rem;border-radius:8px;border:none;background:#0f172a;color:#95d5b2;">
+                    <input id="admin-season-end" type="date" style="flex:1;padding:0.75rem;font-size:1rem;border-radius:8px;border:none;background:#0f172a;color:#95d5b2;">
+                </div>
+                <button class="btn" style="background:#d97706;color:white;" onclick="createSeason()">Create New Season</button>
+            </div>
+        </div>
+
+        <!-- Staff -->
+        <div style="background:#1e293b;padding:1.5rem;border-radius:12px;margin-bottom:1.5rem;">
+            <h2 style="font-family:Georgia,serif;font-size:1.1rem;color:#d8f3dc;margin-bottom:1rem;">Staff</h2>
+            <div id="admin-staff-list" style="margin-bottom:1rem;"></div>
+            <div style="display:flex;flex-direction:column;gap:0.75rem;">
+                <input id="admin-staff-pubkey" type="text" placeholder="Signet pubkey (npub1...)" style="width:100%;padding:0.75rem;font-size:1rem;border-radius:8px;border:none;background:#0f172a;color:#95d5b2;">
+                <input id="admin-staff-name" type="text" placeholder="Display name" style="width:100%;padding:0.75rem;font-size:1rem;border-radius:8px;border:none;background:#0f172a;color:#95d5b2;">
+                <select id="admin-staff-role" style="width:100%;padding:0.75rem;font-size:1rem;border-radius:8px;border:none;background:#0f172a;color:#95d5b2;">
+                    <option value="gate_steward">Gate Steward</option>
+                    <option value="roaming_steward">Roaming Steward</option>
+                    <option value="safety_officer">Safety Officer</option>
+                    <option value="safeguarding_officer">Safeguarding Officer</option>
+                    <option value="admin">Admin</option>
+                </select>
+                <button class="btn" style="background:#059669;color:white;" onclick="addStaff()">Add Staff Member</button>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="offline-badge" id="offline-badge">OFFLINE</div>

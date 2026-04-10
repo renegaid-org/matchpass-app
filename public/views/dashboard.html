@@ -1,0 +1,51 @@
+<div style="background:#0f172a;color:#95d5b2;min-height:100vh;padding:1.5rem;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+    <div style="max-width:1000px;margin:0 auto;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;">
+            <h1 style="font-family:Georgia,serif;font-size:1.5rem;color:#d8f3dc;">MatchPass Dashboard</h1>
+            <button style="background:transparent;color:#64748b;border:1px solid #64748b;padding:0.5rem 1rem;border-radius:8px;cursor:pointer;font-size:0.8rem;" onclick="localStorage.removeItem('mp_role');location.reload();">Back</button>
+        </div>
+
+        <!-- Tabs -->
+        <div style="display:flex;gap:0.5rem;margin-bottom:1.5rem;flex-wrap:wrap;">
+            <button class="btn dash-tab active" data-tab="today" onclick="switchTab('today')" style="background:#2d6a4f;color:white;padding:0.5rem 1rem;min-height:44px;">Today</button>
+            <button class="btn dash-tab" data-tab="cards" onclick="switchTab('cards')" style="background:#1e293b;color:#64748b;padding:0.5rem 1rem;min-height:44px;">Cards</button>
+            <button class="btn dash-tab" data-tab="review" onclick="switchTab('review')" style="background:#1e293b;color:#64748b;padding:0.5rem 1rem;min-height:44px;">Review Queue</button>
+            <button class="btn dash-tab" data-tab="flags" onclick="switchTab('flags')" style="background:#1e293b;color:#64748b;padding:0.5rem 1rem;min-height:44px;">Scan Flags</button>
+            <button class="btn dash-tab" data-tab="stats" onclick="switchTab('stats')" style="background:#1e293b;color:#64748b;padding:0.5rem 1rem;min-height:44px;">Season</button>
+        </div>
+
+        <!-- Today's Match -->
+        <div id="tab-today" class="tab-content">
+            <div id="dash-today-summary" style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.5rem;"></div>
+            <h3 style="font-family:Georgia,serif;margin-bottom:0.75rem;color:#d8f3dc;">Incidents Today</h3>
+            <div id="dash-incidents" style="display:flex;flex-direction:column;gap:0.5rem;"></div>
+            <p id="dash-no-incidents" style="color:#64748b;font-style:italic;display:none;">No incidents today.</p>
+        </div>
+
+        <!-- All Cards -->
+        <div id="tab-cards" class="tab-content" style="display:none;">
+            <div id="dash-cards-list" style="display:flex;flex-direction:column;gap:0.5rem;"></div>
+            <p id="dash-no-cards" style="color:#64748b;font-style:italic;display:none;">No cards this season.</p>
+        </div>
+
+        <!-- Review Queue -->
+        <div id="tab-review" class="tab-content" style="display:none;">
+            <div id="dash-review-list" style="display:flex;flex-direction:column;gap:0.75rem;"></div>
+            <p id="dash-no-reviews" style="color:#64748b;font-style:italic;display:none;">No cards awaiting review.</p>
+        </div>
+
+        <!-- Scan Flags -->
+        <div id="tab-flags" class="tab-content" style="display:none;">
+            <div id="dash-flags-list" style="display:flex;flex-direction:column;gap:0.75rem;"></div>
+            <p id="dash-no-flags" style="color:#64748b;font-style:italic;display:none;">No open scan flags.</p>
+        </div>
+
+        <!-- Season Stats -->
+        <div id="tab-stats" class="tab-content" style="display:none;">
+            <div id="dash-stats-summary" style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:1.5rem;"></div>
+            <h3 style="font-family:Georgia,serif;margin-bottom:0.75rem;color:#d8f3dc;">By Category</h3>
+            <div id="dash-stats-categories"></div>
+        </div>
+    </div>
+</div>
+<div class="offline-badge" id="offline-badge">OFFLINE</div>

@@ -1,0 +1,69 @@
+:root {
+    --green: #059669;
+    --amber: #d97706;
+    --red: #dc2626;
+    --dark: #0f172a;
+    --white: #ffffff;
+    --brand: #2d6a4f;
+    --brand-dark: #1a472a;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+
+.gate-scanner { height: 100vh; display: flex; flex-direction: column; background: var(--dark); }
+.gate-scanner .camera-area { flex: 1; position: relative; overflow: hidden; }
+.gate-scanner video { width: 100%; height: 100%; object-fit: cover; }
+
+.gate-result {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    display: flex; flex-direction: column;
+    z-index: 10; transition: opacity 0.15s;
+}
+.gate-result.green { background: var(--green); }
+.gate-result.amber { background: var(--amber); }
+.gate-result.red { background: var(--red); }
+
+.gate-result .photo-area {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    padding: 1rem;
+}
+.gate-result .photo-area img {
+    max-height: 60vh; max-width: 90vw; border-radius: 12px;
+    border: 4px solid rgba(255,255,255,0.5);
+}
+.gate-result .photo-area .no-photo {
+    font-size: 1.5rem; color: rgba(255,255,255,0.7); text-align: center;
+}
+
+.gate-result .status-area {
+    padding: 1.5rem; text-align: center; color: var(--white);
+}
+.gate-result .status-area .status-text {
+    font-size: 2.5rem; font-weight: 900; text-transform: uppercase;
+    letter-spacing: 0.1em;
+}
+.gate-result .status-area .status-detail {
+    font-size: 1.2rem; margin-top: 0.5rem; opacity: 0.9;
+}
+
+.gate-result .tap-target {
+    position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+    z-index: 11; cursor: pointer;
+}
+
+button, .btn {
+    min-height: 60px; min-width: 60px;
+    font-size: 1.1rem; font-weight: 700;
+    border: none; border-radius: 8px;
+    cursor: pointer; padding: 0.75rem 1.5rem;
+}
+
+.offline-badge {
+    position: fixed; top: 8px; right: 8px;
+    background: var(--amber); color: var(--white);
+    font-size: 0.7rem; font-weight: 700; padding: 4px 8px;
+    border-radius: 4px; z-index: 100;
+    display: none;
+}
+.offline-badge.visible { display: block; }

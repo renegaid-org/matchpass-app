@@ -44,7 +44,7 @@ async function loadStaff() {
         <div style="display:flex;justify-content:space-between;align-items:center;padding:0.75rem;background:#0f172a;border-radius:8px;margin-bottom:0.5rem;">
           <div>
             <span style="font-weight:700;color:#d8f3dc;">${escapeHtml(s.display_name || 'Unnamed')}</span>
-            <span style="font-size:0.8rem;color:#64748b;margin-left:0.5rem;">${escapeHtml(s.role.replace('_', ' '))}</span>
+            <span style="font-size:0.8rem;color:#64748b;margin-left:0.5rem;">${escapeHtml(s.role.replaceAll('_', ' '))}</span>
           </div>
           ${s.is_active
             ? `<button style="background:#dc2626;color:white;border:none;padding:0.4rem 0.8rem;border-radius:6px;cursor:pointer;font-size:0.8rem;" data-remove-staff="${escapeHtml(s.staff_id)}">Remove</button>`

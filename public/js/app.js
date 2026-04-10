@@ -32,23 +32,22 @@ function showLoginScreen() {
 
   if (backend === Nip07Backend) {
     content += `
-        <p style="margin-bottom:1rem;text-align:center;">Sign in with your browser extension</p>
+        <p style="margin-bottom:1rem;text-align:center;">Signet detected &mdash; sign in with your Steward Pass</p>
         <button id="btn-nip07" style="background:#059669;color:white;width:100%;padding:1rem;font-size:1rem;border:none;border-radius:8px;cursor:pointer;">Sign In</button>`;
   } else if (backend === Nip46Backend) {
     content += `
-        <p style="margin-bottom:1rem;text-align:center;">Sign in with remote signer</p>
+        <p style="margin-bottom:1rem;text-align:center;">Remote signer connected &mdash; sign in with your Steward Pass</p>
         <button id="btn-nip46" style="background:#059669;color:white;width:100%;padding:1rem;font-size:1rem;border:none;border-radius:8px;cursor:pointer;">Connect & Sign In</button>`;
   } else if (backend === LocalKeyBackend) {
     content += `
-        <p style="margin-bottom:1rem;text-align:center;">Enter your PIN to unlock</p>
+        <p style="margin-bottom:1rem;text-align:center;">Enter your PIN to unlock your Steward Pass</p>
         <input id="pin-input" type="password" inputmode="numeric" placeholder="PIN" style="width:100%;padding:1rem;font-size:1.2rem;border-radius:8px;border:none;margin-bottom:1rem;text-align:center;box-sizing:border-box;">
         <button id="btn-local" style="background:#059669;color:white;width:100%;padding:1rem;font-size:1rem;border:none;border-radius:8px;cursor:pointer;">Unlock & Sign In</button>`;
   } else {
     content += `
-        <p style="margin-bottom:1rem;text-align:center;">No signing method detected</p>
-        <button id="btn-setup-nip07" style="background:#059669;color:white;width:100%;padding:1rem;font-size:1rem;border:none;border-radius:8px;cursor:pointer;margin-bottom:0.5rem;">Use Browser Extension</button>
-        <button id="btn-setup-nip46" style="background:#2d6a4f;color:white;width:100%;padding:1rem;font-size:1rem;border:none;border-radius:8px;cursor:pointer;margin-bottom:0.5rem;">Connect Remote Signer</button>
-        <button id="btn-setup-local" style="background:#2d6a4f;color:white;width:100%;padding:1rem;font-size:1rem;border:none;border-radius:8px;cursor:pointer;">Create Local Key</button>`;
+        <p style="margin-bottom:1.5rem;text-align:center;font-size:1.1rem;">Sign in with your Steward Pass</p>
+        <button id="btn-setup-signet" style="background:#059669;color:white;width:100%;padding:1rem;font-size:1rem;border:none;border-radius:8px;cursor:pointer;margin-bottom:1rem;">Sign In with Signet</button>
+        <button id="btn-no-pass" style="background:transparent;color:#95d5b2;width:100%;padding:0.75rem;font-size:0.9rem;border:1px solid #334155;border-radius:8px;cursor:pointer;">I don&rsquo;t have a Steward Pass yet</button>`;
   }
 
   content += `
@@ -95,16 +94,16 @@ function bindLoginHandlers() {
     if (e.key === 'Enter') document.getElementById('btn-local')?.click();
   });
 
-  document.getElementById('btn-setup-nip07')?.addEventListener('click', () => {
-    showStatus('Install a NIP-07 extension (nos2x, Alby) then reload the page');
+  document.getElementById('btn-setup-signet')?.addEventListener('click', () => {
+    if (Nip07Backend.isAvailable()) {
+      loginWithBackend(Nip07Backend).catch(err => showStatus(escapeHtml(err.message)));
+    } else {
+      showSignetSetupGuide();
+    }
   });
 
-  document.getElementById('btn-setup-nip46')?.addEventListener('click', () => {
-    showNip46Setup();
-  });
-
-  document.getElementById('btn-setup-local')?.addEventListener('click', () => {
-    showLocalKeySetup();
+  document.getElementById('btn-no-pass')?.addEventListener('click', () => {
+    showSignetSetupGuide();
   });
 
   document.getElementById('btn-change-method')?.addEventListener('click', () => {
@@ -192,6 +191,36 @@ function showLocalKeySetup() {
   });
 
   document.getElementById('btn-back').addEventListener('click', () => showLoginScreen());
+}
+
+// --- Signet Setup Guide ---
+
+function showSignetSetupGuide() {
+  const form = document.getElementById('login-form');
+  form.innerHTML = `
+    <div style="text-align:left;line-height:1.8;">
+      <p style="margin-bottom:1rem;font-weight:700;font-size:1.05rem;">Get your Steward Pass</p>
+      <div style="margin-bottom:1rem;padding:0.75rem;background:#0f172a;border-radius:8px;border-left:3px solid #059669;">
+        <strong style="color:#d8f3dc;">1.</strong> Open <a href="https://mysignet.app" target="_blank" rel="noopener" style="color:#059669;text-decoration:underline;">mysignet.app</a> and create your identity
+      </div>
+      <div style="margin-bottom:1rem;padding:0.75rem;background:#0f172a;border-radius:8px;border-left:3px solid #059669;">
+        <strong style="color:#d8f3dc;">2.</strong> Create a persona for your club role (e.g. &ldquo;Belper Town FC &mdash; Steward&rdquo;)
+      </div>
+      <div style="margin-bottom:1rem;padding:0.75rem;background:#0f172a;border-radius:8px;border-left:3px solid #059669;">
+        <strong style="color:#d8f3dc;">3.</strong> Give your persona&rsquo;s public key to your club admin so they can register you
+      </div>
+      <div style="margin-bottom:1rem;padding:0.75rem;background:#0f172a;border-radius:8px;border-left:3px solid #059669;">
+        <strong style="color:#d8f3dc;">4.</strong> Come back here and sign in
+      </div>
+      <p style="margin-top:1rem;font-size:0.85rem;color:#64748b;">Already have a Nostr key? You can also use a <a href="#" id="link-advanced" style="color:#64748b;text-decoration:underline;">browser extension or remote signer</a>.</p>
+    </div>
+    <button id="btn-back" style="background:transparent;color:#64748b;width:100%;padding:0.5rem;border:none;cursor:pointer;margin-top:1rem;">Back</button>`;
+
+  document.getElementById('link-advanced')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    showMethodPicker();
+  });
+  document.getElementById('btn-back')?.addEventListener('click', () => showLoginScreen());
 }
 
 // --- Method Picker ---

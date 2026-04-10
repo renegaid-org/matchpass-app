@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { verifyEvent } from 'nostr-tools/pure';
 import { query } from '../db.js';
 import { verifyStaff, requireRole } from '../auth.js';
-import { computeFanStatus } from '../card-engine.js';
+import { computeFanStatus, shouldExpireYellow, shouldExpireRed } from '../card-engine.js';
 import { isValidScanType, isValidPhotoHash, isValidPubkey, isValidOptionalText } from '../validation.js';
 
 const VENUE_ENTRY_KIND = 21235;
@@ -209,9 +209,23 @@ router.post('/', verifyStaff, requireRole('gate_steward', 'roaming_steward', 'sa
   if (scanResult.colour === 'green' && cardsResult.rows.length > 0) {
     await query(
       `UPDATE cards SET clean_matches = clean_matches + 1
-       WHERE fan_signet_pubkey = $1 AND club_id = $2 AND status = 'active' AND card_type = 'yellow'`,
+       WHERE fan_signet_pubkey = $1 AND club_id = $2 AND status = 'active'`,
       [fan_signet_pubkey, req.staff.club_id]
     );
+
+    // Expire cards that have met their clean_matches threshold
+    const updatedCards = await query(
+      'SELECT * FROM cards WHERE fan_signet_pubkey = $1 AND club_id = $2 AND status = $3',
+      [fan_signet_pubkey, req.staff.club_id, 'active']
+    );
+    for (const card of updatedCards.rows) {
+      if (shouldExpireYellow(card) || shouldExpireRed(card)) {
+        await query(
+          "UPDATE cards SET status = 'expired' WHERE card_id = $1",
+          [card.card_id]
+        );
+      }
+    }
   }
 
   res.json(scanResult);

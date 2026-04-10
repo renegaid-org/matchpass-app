@@ -13,7 +13,7 @@ router.get('/', verifyStaff, requireRole('admin', 'safety_officer'), async (req,
   res.json(result.rows);
 });
 
-router.post('/', verifyStaff, requireRole('admin'), async (req, res) => {
+router.post('/', verifyStaff, requireRole('admin', 'safeguarding_officer'), async (req, res) => {
   const { signet_pubkey, display_name, role } = req.body;
   const validRoles = ['gate_steward', 'roaming_steward', 'safety_officer', 'safeguarding_officer', 'admin'];
   if (!validRoles.includes(role)) {
@@ -33,7 +33,7 @@ router.post('/', verifyStaff, requireRole('admin'), async (req, res) => {
   res.status(201).json(result.rows[0]);
 });
 
-router.delete('/:id', verifyStaff, requireRole('admin'), async (req, res) => {
+router.delete('/:id', verifyStaff, requireRole('admin', 'safeguarding_officer'), async (req, res) => {
   if (!isValidUUID(req.params.id)) return res.status(400).json({ error: 'Invalid staff ID' });
   await query(
     'UPDATE staff SET is_active = false WHERE staff_id = $1 AND club_id = $2',

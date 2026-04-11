@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { query } from '../db.js';
 import pool from '../db.js';
 import { verifyStaff, requireRole } from '../auth.js';
+import { isValidDateString } from '../validation.js';
 
 const router = Router();
 
@@ -31,6 +32,12 @@ router.post('/', verifyStaff, requireRole('admin'), async (req, res) => {
   }
   if (name.length > 100) {
     return res.status(400).json({ error: 'name max 100 characters' });
+  }
+  if (!isValidDateString(start_date)) {
+    return res.status(400).json({ error: 'start_date must be a valid date in YYYY-MM-DD format' });
+  }
+  if (!isValidDateString(end_date)) {
+    return res.status(400).json({ error: 'end_date must be a valid date in YYYY-MM-DD format' });
   }
   if (new Date(end_date) <= new Date(start_date)) {
     return res.status(400).json({ error: 'end_date must be after start_date' });

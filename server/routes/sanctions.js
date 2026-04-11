@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { query } from '../db.js';
 import { verifyStaff, requireRole } from '../auth.js';
 import { publishSanction, publishSanctionUpdate } from '../nostr.js';
-import { isValidPubkey, isValidText, isValidUUID } from '../validation.js';
+import { isValidPubkey, isValidText, isValidUUID, isValidDateString } from '../validation.js';
 
 const router = Router();
 
@@ -23,11 +23,12 @@ router.post('/', verifyStaff, requireRole('safety_officer'), async (req, res) =>
   if (match_count != null && (!Number.isInteger(match_count) || match_count < 1 || match_count > 100)) {
     return res.status(400).json({ error: 'match_count must be a positive integer (1-100)' });
   }
+  // Validate date format (strict YYYY-MM-DD)
+  if (!isValidDateString(start_date)) {
+    return res.status(400).json({ error: 'start_date must be a valid date in YYYY-MM-DD format' });
+  }
   // Validate start_date is reasonable (today, yesterday, or up to 30 days in future)
   const startDateObj = new Date(start_date);
-  if (isNaN(startDateObj.getTime())) {
-    return res.status(400).json({ error: 'start_date must be a valid date' });
-  }
   const now = new Date();
   const sevenDaysAgo = new Date(now);
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 1);
@@ -37,10 +38,10 @@ router.post('/', verifyStaff, requireRole('safety_officer'), async (req, res) =>
     return res.status(400).json({ error: 'start_date must be between yesterday and 30 days from now' });
   }
   if (end_date) {
-    const endDateObj = new Date(end_date);
-    if (isNaN(endDateObj.getTime())) {
-      return res.status(400).json({ error: 'end_date must be a valid date' });
+    if (!isValidDateString(end_date)) {
+      return res.status(400).json({ error: 'end_date must be a valid date in YYYY-MM-DD format' });
     }
+    const endDateObj = new Date(end_date);
     if (endDateObj <= startDateObj) {
       return res.status(400).json({ error: 'end_date must be after start_date' });
     }

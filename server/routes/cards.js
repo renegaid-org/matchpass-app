@@ -4,7 +4,7 @@ import pool from '../db.js';
 import { verifyStaff, requireRole } from '../auth.js';
 import { shouldAutoRed, reviewDeadline } from '../card-engine.js';
 import { publishRedCard } from '../nostr.js';
-import { isValidPubkey, isValidCategory, isValidOptionalText } from '../validation.js';
+import { isValidPubkey, isValidCategory, isValidOptionalText, isValidDateString } from '../validation.js';
 
 const router = Router();
 
@@ -17,10 +17,11 @@ export function validateCardInput(body) {
   if (fan_signet_pubkey.length > 200) return { valid: false, error: 'fan_signet_pubkey too long' };
   if (!isValidPubkey(fan_signet_pubkey)) return { valid: false, error: 'Invalid pubkey format' };
   if (!category) return { valid: false, error: 'category required' };
-  if (category !== 'Other' && !isValidCategory(category)) {
+  if (!isValidCategory(category)) {
     return { valid: false, error: 'Invalid category' };
   }
   if (!match_date) return { valid: false, error: 'match_date required' };
+  if (!isValidDateString(match_date)) return { valid: false, error: 'match_date must be in YYYY-MM-DD format' };
   if (notes && notes.length > 280) return { valid: false, error: 'notes must be 280 chars or fewer' };
   return { valid: true };
 }

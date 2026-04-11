@@ -19,6 +19,10 @@ router.post('/', verifyStaff, requireRole('admin', 'safeguarding_officer'), asyn
   if (!validRoles.includes(role)) {
     return res.status(400).json({ error: `Invalid role. Must be one of: ${validRoles.join(', ')}` });
   }
+  // Only admins can create admin or safety_officer roles
+  if ((role === 'admin' || role === 'safety_officer') && req.staff.role !== 'admin') {
+    return res.status(403).json({ error: 'Only admins can create admin or safety officer staff' });
+  }
   if (!signet_pubkey || !isValidPubkey(signet_pubkey)) {
     return res.status(400).json({ error: 'Invalid Signet pubkey format' });
   }

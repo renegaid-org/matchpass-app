@@ -66,6 +66,17 @@ export function isValidUUID(str) {
  */
 export function isValidPhotoHash(hash) {
   if (!hash || typeof hash !== 'string') return false;
-  if (hash.length > 128) return false;
-  return /^[0-9a-f]+$/.test(hash);
+  return /^[0-9a-f]{64}$/.test(hash);
+}
+
+/**
+ * Validate a strict YYYY-MM-DD date string.
+ * Checks format with regex and that the date actually parses to a valid date.
+ */
+export function isValidDateString(str) {
+  if (!str || typeof str !== 'string') return false;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(str)) return false;
+  const [y, m, d] = str.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  return date.getFullYear() === y && date.getMonth() === m - 1 && date.getDate() === d;
 }

@@ -3,6 +3,7 @@
 import { finalizeEvent } from 'nostr-tools/pure';
 import crypto from 'node:crypto';
 import { EVENT_KINDS, isValidPubkey, isValidCardType, isValidCategory, isValidSanctionType } from './types.js';
+import { isValidDateString } from '../validation.js';
 
 /**
  * Create a kind 31100 membership event (signed by the fan).
@@ -57,7 +58,7 @@ export function createGateLock(fanPubkey, clubPubkey, photoHash, previousEventId
  */
 export function createAttendance(fanPubkey, matchDate, result, previousEventId, signerSeckey) {
   if (!isValidPubkey(fanPubkey)) throw new Error('Invalid fan pubkey');
-  if (!matchDate || typeof matchDate !== 'string') throw new Error('Invalid match date');
+  if (!matchDate || typeof matchDate !== 'string' || !isValidDateString(matchDate)) throw new Error('Invalid match date');
   if (!['clean', 'yellow', 'red'].includes(result)) throw new Error('Invalid result');
   if (!previousEventId || typeof previousEventId !== 'string') throw new Error('Invalid previous event ID');
 
@@ -111,8 +112,10 @@ export function createSanction(fanPubkey, sanctionType, reason, startDate, endDa
   if (!isValidPubkey(fanPubkey)) throw new Error('Invalid fan pubkey');
   if (!isValidSanctionType(sanctionType)) throw new Error('Invalid sanction type');
   if (!reason || typeof reason !== 'string') throw new Error('Invalid reason');
-  if (!startDate || typeof startDate !== 'string') throw new Error('Invalid start date');
+  if (!startDate || typeof startDate !== 'string' || !isValidDateString(startDate)) throw new Error('Invalid start date');
   if (!endDate || typeof endDate !== 'string') throw new Error('Invalid end date');
+  // endDate can be 'indefinite' or a valid date string
+  if (endDate !== 'indefinite' && !isValidDateString(endDate)) throw new Error('Invalid end date format');
   if (!previousEventId || typeof previousEventId !== 'string') throw new Error('Invalid previous event ID');
 
   const uuid = crypto.randomUUID();

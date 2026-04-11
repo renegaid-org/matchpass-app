@@ -44,6 +44,21 @@ export function verifyChain(events) {
     errors.push('First event (membership) must not have a previous tag');
   }
 
+  // Verify p-tag consistency: every event must reference the same fan pubkey
+  const firstPTag = getTagValue(first, 'p');
+  if (!firstPTag) {
+    errors.push('First event missing p tag (fan pubkey)');
+  } else {
+    for (let i = 1; i < events.length; i++) {
+      const pTag = getTagValue(events[i], 'p');
+      if (pTag !== firstPTag) {
+        errors.push(
+          `Event ${i} (${events[i].id}): p tag ${pTag} does not match fan pubkey ${firstPTag}`
+        );
+      }
+    }
+  }
+
   // Walk the chain: each event's previous tag must match the prior event's ID
   for (let i = 1; i < events.length; i++) {
     const prev = getTagValue(events[i], 'previous');
@@ -72,6 +87,13 @@ export function verifyChain(events) {
  *
  * The staff roster event (kind 31000) has tags like:
  *   ["p", "<pubkey>", "<role>"]
+ *
+ * LIMITATION: The current check verifies against the current roster, not the
+ * roster at the time of signing. A steward who was authorised when they signed
+ * an event but was later removed would fail verification. Conversely, a steward
+ * added after signing would pass. This is acceptable for the pilot.
+ * TODO: Implement roster versioning — store timestamped roster snapshots and
+ * verify each event against the roster that was active at event.created_at.
  */
 export function verifySignerAuthority(event, staffRosterEvent) {
   if (!staffRosterEvent || !Array.isArray(staffRosterEvent.tags)) {
@@ -115,10 +137,23 @@ export function getCurrentStatus(events) {
   const activeCards = [];
   const activeSanctions = [];
 
+  const TWELVE_MONTHS_SECONDS = 365 * 24 * 60 * 60;
+  const TWENTY_FOUR_MONTHS_SECONDS = 2 * TWELVE_MONTHS_SECONDS;
+
   for (const event of events) {
     if (event.kind === EVENT_KINDS.CARD) {
       const cardType = getTagValue(event, 'card_type');
       const category = getTagValue(event, 'category');
+      const ageSeconds = now - event.created_at;
+
+      // M1: Time-based card expiry — yellow cards expire after 12 months, red after 24
+      if (cardType === 'yellow' && ageSeconds > TWELVE_MONTHS_SECONDS) {
+        continue; // Expired yellow card — skip
+      }
+      if (cardType === 'red' && ageSeconds > TWENTY_FOUR_MONTHS_SECONDS) {
+        continue; // Expired red card — skip
+      }
+
       activeCards.push({ id: event.id, cardType, category, createdAt: event.created_at });
     }
 

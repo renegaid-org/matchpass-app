@@ -9,7 +9,7 @@
  */
 export async function fetchPhoto(photoHash) {
   // Validate hash format to prevent SSRF
-  if (!photoHash || typeof photoHash !== 'string' || !/^[0-9a-f]+$/.test(photoHash) || photoHash.length > 128) {
+  if (!photoHash || typeof photoHash !== 'string' || !/^[0-9a-f]{64}$/.test(photoHash)) {
     return null;
   }
 

@@ -47,8 +47,17 @@ router.post('/verify-qr', async (req, res) => {
     return res.status(400).json({ decision: 'red', error: decoded.error });
   }
 
+  // Freshness check (30 seconds) — before replay check to avoid polluting cache with stale proofs
+  if (!isProofFresh(decoded)) {
+    return res.status(400).json({
+      decision: 'red',
+      fanPubkey: decoded.fanPubkey,
+      error: 'QR proof is stale',
+    });
+  }
+
   // Replay protection: reject already-consumed QR proofs within the freshness window
-  const proofId = decoded.sig || proof;
+  const proofId = proof;
   if (consumedQRProofs.has(proofId)) {
     return res.status(400).json({
       decision: 'red',
@@ -57,15 +66,6 @@ router.post('/verify-qr', async (req, res) => {
   }
   consumedQRProofs.add(proofId);
   qrProofTimestamps.set(proofId, Date.now());
-
-  // Freshness check (30 seconds)
-  if (!isProofFresh(decoded)) {
-    return res.status(400).json({
-      decision: 'red',
-      fanPubkey: decoded.fanPubkey,
-      error: 'QR proof is stale',
-    });
-  }
 
   // Status check: if the fan claims banned, reject outright
   if (decoded.status === STATUS.BANNED) {
@@ -211,7 +211,7 @@ router.post('/sync', verifyStaff, requireRole('safety_officer', 'admin'), async 
       }
     }
   } else {
-    console.warn('Chain sync: no rosterEvent provided — skipping signer authority verification');
+    return res.status(400).json({ error: 'rosterEvent required for signer authority verification' });
   }
 
   // Compute current status

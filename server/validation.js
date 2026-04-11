@@ -66,8 +66,7 @@ export function isValidUUID(str) {
  */
 export function isValidPhotoHash(hash) {
   if (!hash || typeof hash !== 'string') return false;
-  if (hash.length > 128) return false;
-  return /^[0-9a-f]+$/.test(hash);
+  return /^[0-9a-f]{64}$/.test(hash);
 }
 
 /**

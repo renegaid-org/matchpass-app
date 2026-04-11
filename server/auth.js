@@ -181,6 +181,12 @@ async function verifyNostr(req, res, next, database, encoded) {
       if (reqHost && eventUrl.host && eventUrl.host !== reqHost) {
         return res.status(401).json({ error: 'URL tag host mismatch' });
       }
+      // H4: Scheme check — enforce HTTPS in production
+      const allowedOrigin = process.env.ALLOWED_ORIGIN || '';
+      const isProduction = process.env.NODE_ENV === 'production' || allowedOrigin.startsWith('https');
+      if (isProduction && eventUrl.protocol !== 'https:') {
+        return res.status(401).json({ error: 'URL tag must use HTTPS in production' });
+      }
     } catch {
       return res.status(401).json({ error: 'Invalid URL tag' });
     }

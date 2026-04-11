@@ -9,4 +9,7 @@ COPY . .
 
 EXPOSE 3000
 
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+USER appuser
+
 CMD ["sh", "-c", "npm run migrate:up && node server/index.js"]

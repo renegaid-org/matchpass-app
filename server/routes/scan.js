@@ -102,7 +102,8 @@ router.post('/', verifyStaff, requireRole('gate_steward', 'roaming_steward', 'sa
       fan_signet_pubkey = verified.pubkey;
       photo_hash = verified.photo_hash;
     } catch (err) {
-      return res.status(400).json({ error: `Venue entry verification failed: ${err.message}` });
+      console.error('Venue entry verification failed:', err.message);
+      return res.status(400).json({ error: 'Venue entry verification failed' });
     }
   } else {
     fan_signet_pubkey = req.body.fan_signet_pubkey;

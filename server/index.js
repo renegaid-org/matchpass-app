@@ -14,6 +14,7 @@ import cardsRouter from './routes/cards.js';
 import sanctionsRouter from './routes/sanctions.js';
 import linkagesRouter from './routes/linkages.js';
 import dashboardRouter from './routes/dashboard.js';
+import chainRouter from './routes/chain.js';
 import authRouter from './routes/auth.js';
 import { initNostr } from './nostr.js';
 
@@ -78,6 +79,7 @@ app.use('/api/cards', cardsRouter);
 app.use('/api/sanctions', sanctionsRouter);
 app.use('/api/linkages', linkagesRouter);
 app.use('/api/dashboard', dashboardRouter);
+app.use('/api/chain', chainRouter);
 
 // Daily scan log cleanup (30-day retention)
 setInterval(async () => {

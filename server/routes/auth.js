@@ -26,6 +26,10 @@ export async function handleLogout(req, res, database = db) {
   try {
     const authHeader = req.headers.authorization;
     const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : '';
+    // Validate token format before querying the DB (must be 64-char hex string)
+    if (!token || !/^[0-9a-f]{64}$/.test(token)) {
+      return res.status(204).end();
+    }
     await deleteSession(token, database);
     res.status(204).end();
   } catch (err) {

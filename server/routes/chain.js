@@ -2,9 +2,29 @@
 
 import { Router } from 'express';
 import { query } from '../db.js';
-import { verifyQRProof, isProofFresh, verifyChain, getCurrentStatus, EVENT_KINDS, STATUS, isValidPubkey } from '../chain/index.js';
+import { verifyStaff, requireRole } from '../auth.js';
+import { verifyQRProof, isProofFresh, verifyChain, verifySignerAuthority, getCurrentStatus, EVENT_KINDS, STATUS, isValidPubkey } from '../chain/index.js';
 
 const router = Router();
+
+// QR proof replay prevention: track consumed proof signatures (30s TTL)
+const consumedQRProofs = new Set();
+const qrProofTimestamps = new Map();
+setInterval(() => {
+  const cutoff = Date.now() - 30_000;
+  for (const [id, ts] of qrProofTimestamps) {
+    if (ts < cutoff) {
+      qrProofTimestamps.delete(id);
+      consumedQRProofs.delete(id);
+    }
+  }
+}, 10_000);
+
+/** Clear the QR proof replay cache (test helper only). */
+export function _resetQRReplayCache() {
+  consumedQRProofs.clear();
+  qrProofTimestamps.clear();
+}
 
 /**
  * POST /api/chain/verify-qr
@@ -26,6 +46,17 @@ router.post('/verify-qr', async (req, res) => {
   if (!decoded.valid) {
     return res.status(400).json({ decision: 'red', error: decoded.error });
   }
+
+  // Replay protection: reject already-consumed QR proofs within the freshness window
+  const proofId = decoded.sig || proof;
+  if (consumedQRProofs.has(proofId)) {
+    return res.status(400).json({
+      decision: 'red',
+      error: 'QR proof already consumed',
+    });
+  }
+  consumedQRProofs.add(proofId);
+  qrProofTimestamps.set(proofId, Date.now());
 
   // Freshness check (30 seconds)
   if (!isProofFresh(decoded)) {
@@ -54,12 +85,12 @@ router.post('/verify-qr', async (req, res) => {
     );
 
     if (tipResult.rows.length === 0) {
-      // First-time visitor: let them in, verify chain from relay in the background
+      // First-time visitor: amber — background verification pending
       return res.json({
-        decision: 'green',
+        decision: 'amber',
         fanPubkey: decoded.fanPubkey,
         status: decoded.status,
-        reason: 'First-time visitor — background verification pending',
+        reason: 'First visit — background verification pending',
         firstTime: true,
       });
     }
@@ -102,8 +133,9 @@ router.post('/verify-qr', async (req, res) => {
  * GET /api/chain/:pubkey
  *
  * Returns the chain tip and status for a fan (dashboard/admin use).
+ * Requires authenticated staff.
  */
-router.get('/:pubkey', async (req, res) => {
+router.get('/:pubkey', verifyStaff, async (req, res) => {
   const { pubkey } = req.params;
   if (!isValidPubkey(pubkey)) {
     return res.status(400).json({ error: 'Invalid pubkey format' });
@@ -142,13 +174,20 @@ router.get('/:pubkey', async (req, res) => {
  * Validates the chain, stores signed events that this club authored,
  * and updates the chain tip.
  *
- * Body: { events: [<nostr-event>, ...] }
+ * Requires safety_officer or admin role.
+ *
+ * Body: { events: [<nostr-event>, ...], rosterEvent?: <nostr-event> }
  * Returns: { valid, tip, status, stored }
  */
-router.post('/sync', async (req, res) => {
-  const { events } = req.body;
+router.post('/sync', verifyStaff, requireRole('safety_officer', 'admin'), async (req, res) => {
+  const { events, rosterEvent } = req.body;
   if (!Array.isArray(events) || events.length === 0) {
     return res.status(400).json({ error: 'events array required' });
+  }
+
+  // H2: Reject unbounded event arrays
+  if (events.length > 200) {
+    return res.status(400).json({ error: 'Chain too long' });
   }
 
   // Verify the chain
@@ -158,6 +197,21 @@ router.post('/sync', async (req, res) => {
       error: 'Chain verification failed',
       details: chainResult.errors,
     });
+  }
+
+  // C3: Verify signer authority for each non-membership event
+  if (rosterEvent) {
+    for (let i = 1; i < events.length; i++) {
+      const authResult = verifySignerAuthority(events[i], rosterEvent);
+      if (!authResult.authorised) {
+        return res.status(400).json({
+          error: 'Signer authority verification failed',
+          details: `Event ${i} (${events[i].id}): ${authResult.reason}`,
+        });
+      }
+    }
+  } else {
+    console.warn('Chain sync: no rosterEvent provided — skipping signer authority verification');
   }
 
   // Compute current status

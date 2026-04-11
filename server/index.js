@@ -30,12 +30,13 @@ app.use(express.json());
 // Security headers
 app.use((req, res, next) => {
   res.setHeader('Content-Security-Policy',
-    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: https:; connect-src 'self' wss: ws:"
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: https:; connect-src 'self' wss: ws:"
   );
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('X-XSS-Protection', '0');
+  res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains');
   next();
 });
 
@@ -68,6 +69,20 @@ app.use('/api/auth/login', rateLimit({
   windowMs: 60 * 1000,
   max: 10,
   message: { error: 'Too many login attempts' },
+}));
+
+// Rate limiter for chain QR verification (gate scanner hardware — unauthenticated)
+app.use('/api/chain/verify-qr', rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  message: { error: 'Too many QR verification requests' },
+}));
+
+// Rate limiter for chain sync
+app.use('/api/chain/sync', rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  message: { error: 'Too many chain sync requests' },
 }));
 
 app.use('/api/auth', authRouter);

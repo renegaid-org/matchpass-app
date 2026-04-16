@@ -10,7 +10,7 @@ setInterval(() => {
   }
 }, 15_000);
 
-export default function createScanRouter({ chainTipCache, scanTracker }) {
+export default function createScanRouter({ chainTipCache, scanTracker }, opts = {}) {
   const router = Router();
 
   router.post('/', (req, res) => {
@@ -21,7 +21,7 @@ export default function createScanRouter({ chainTipCache, scanTracker }) {
 
     let entry;
     try {
-      entry = verifyVenueEntry(venue_entry_event);
+      entry = verifyVenueEntry(venue_entry_event, opts);
     } catch (err) {
       return res.status(400).json({ decision: 'red', error: err.message });
     }

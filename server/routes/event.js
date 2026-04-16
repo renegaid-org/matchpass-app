@@ -6,6 +6,22 @@ import { publishEvent } from '../relay.js';
 
 const ALLOWED_KINDS = new Set(Object.values(EVENT_KINDS));
 
+// Per-fan lock — prevents concurrent submissions racing on the same chain tip
+const fanLocks = new Map(); // fanPubkey -> Promise
+
+async function withFanLock(fanPubkey, fn) {
+  while (fanLocks.has(fanPubkey)) {
+    await fanLocks.get(fanPubkey);
+  }
+  const promise = fn();
+  fanLocks.set(fanPubkey, promise);
+  try {
+    return await promise;
+  } finally {
+    fanLocks.delete(fanPubkey);
+  }
+}
+
 export default function createEventRouter({ chainTipCache, rosterCache }) {
   const router = Router();
 
@@ -29,43 +45,63 @@ export default function createEventRouter({ chainTipCache, rosterCache }) {
     }
     const fanPubkey = pTag[1];
 
-    // Signer authority (skip for membership — signed by fan)
-    if (event.kind !== EVENT_KINDS.MEMBERSHIP) {
-      const roster = rosterCache.get(req.staff?.clubPubkey);
-      if (!roster) {
-        return res.status(400).json({ error: 'No roster found for your club' });
+    return withFanLock(fanPubkey, async () => {
+      // Signer authority (skip for membership — signed by fan)
+      if (event.kind !== EVENT_KINDS.MEMBERSHIP) {
+        const roster = rosterCache.get(req.staff?.clubPubkey);
+        if (!roster) {
+          return res.status(400).json({ error: 'No roster found for your club' });
+        }
+        const authCheck = verifySignerAuthority(event, roster.rosterEvent);
+        if (!authCheck.authorised) {
+          return res.status(403).json({ error: authCheck.reason });
+        }
       }
-      const authCheck = verifySignerAuthority(event, roster.rosterEvent);
-      if (!authCheck.authorised) {
-        return res.status(403).json({ error: authCheck.reason });
+
+      // Chain linkage (skip for membership — first event)
+      if (event.kind !== EVENT_KINDS.MEMBERSHIP) {
+        const previousTag = event.tags?.find(t => Array.isArray(t) && t[0] === 'previous');
+        if (!previousTag || !previousTag[1]) {
+          return res.status(400).json({ error: 'Missing previous tag' });
+        }
+        const tip = chainTipCache.get(fanPubkey);
+        if (tip && tip.tipEventId !== previousTag[1]) {
+          return res.status(409).json({
+            error: 'Chain tip mismatch', currentTip: tip.tipEventId,
+          });
+        }
       }
-    }
 
-    // Chain linkage (skip for membership — first event)
-    if (event.kind !== EVENT_KINDS.MEMBERSHIP) {
-      const previousTag = event.tags?.find(t => Array.isArray(t) && t[0] === 'previous');
-      if (!previousTag || !previousTag[1]) {
-        return res.status(400).json({ error: 'Missing previous tag' });
+      // Publish to relay
+      try {
+        await publishEvent(event);
+      } catch (err) {
+        return res.status(502).json({ error: `Relay publish failed: ${err.message}` });
       }
-      const tip = chainTipCache.get(fanPubkey);
-      if (tip && tip.tipEventId !== previousTag[1]) {
-        return res.status(409).json({
-          error: 'Chain tip mismatch', currentTip: tip.tipEventId,
-        });
+
+      // Update cache — derive status from the event kind
+      let status = 0; // clean
+      if (event.kind === EVENT_KINDS.CARD) {
+        const cardType = event.tags?.find(t => t[0] === 'card_type')?.[1];
+        if (cardType === 'red') status = 2;
+        else if (cardType === 'yellow') status = 1;
+      } else if (event.kind === EVENT_KINDS.SANCTION) {
+        const sanctionType = event.tags?.find(t => t[0] === 'sanction_type')?.[1];
+        if (sanctionType === 'ban') status = 3;
+        else status = 2; // suspension
+      } else if (event.kind === EVENT_KINDS.REVIEW_OUTCOME) {
+        // Dismissal/downgrade lowers status. Accurate status comes from next relay sync.
+        const outcome = event.tags?.find(t => t[0] === 'outcome')?.[1];
+        if (outcome === 'dismissed') status = 0;
+        else status = 1; // downgraded = yellow at most
+      } else if ([EVENT_KINDS.MEMBERSHIP, EVENT_KINDS.GATE_LOCK, EVENT_KINDS.ATTENDANCE].includes(event.kind)) {
+        // Non-status-changing events: preserve any existing status
+        status = chainTipCache.get(fanPubkey)?.status ?? 0;
       }
-    }
+      chainTipCache.set(fanPubkey, { tipEventId: event.id, status });
 
-    // Publish to relay
-    try {
-      await publishEvent(event);
-    } catch (err) {
-      return res.status(502).json({ error: `Relay publish failed: ${err.message}` });
-    }
-
-    // Update cache
-    chainTipCache.set(fanPubkey, { tipEventId: event.id, status: 0 });
-
-    return res.status(201).json({ ok: true, eventId: event.id, fanPubkey });
+      return res.status(201).json({ ok: true, eventId: event.id, fanPubkey });
+    });
   });
 
   return router;

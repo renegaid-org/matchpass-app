@@ -79,10 +79,18 @@ export async function connectAndSubscribe(relayUrl, caches, clubPubkeys) {
 function collectEvents(relay, filters, timeoutMs = 15000) {
   return new Promise((resolve) => {
     const collected = [];
-    const timeout = setTimeout(() => { sub.close(); resolve(collected); }, timeoutMs);
+    let resolved = false;
+    const done = () => {
+      if (resolved) return;
+      resolved = true;
+      clearTimeout(timeout);
+      sub.close();
+      resolve(collected);
+    };
+    const timeout = setTimeout(done, timeoutMs);
     const sub = relay.subscribe(filters, {
       onevent: (event) => collected.push(event),
-      oneose: () => { clearTimeout(timeout); sub.close(); resolve(collected); },
+      oneose: done,
     });
   });
 }
@@ -90,6 +98,7 @@ function collectEvents(relay, filters, timeoutMs = 15000) {
 /**
  * Handle a chain event — update the chain tip cache.
  * Uses created_at as a simple ordering heuristic.
+ * Status is derived from the event kind; non-status events preserve existing status.
  */
 function handleChainEvent(event, chainTipCache) {
   const pTag = event.tags?.find(t => Array.isArray(t) && t[0] === 'p');
@@ -100,9 +109,26 @@ function handleChainEvent(event, chainTipCache) {
   // Only update if newer (by created_at). Full chain walk happens at sync time.
   if (existing && existing._createdAt && event.created_at <= existing._createdAt) return;
 
-  // Simple status: 0 (clean) by default. Accurate status requires full chain walk.
-  // For gate scan, the chain tip + status is a cache — the QR proof is the authority.
-  chainTipCache.set(fanPubkey, { tipEventId: event.id, status: 0 });
+  // Derive status from event kind
+  let status = 0;
+  if (event.kind === EVENT_KINDS.CARD) {
+    const cardType = event.tags?.find(t => t[0] === 'card_type')?.[1];
+    if (cardType === 'red') status = 2;
+    else if (cardType === 'yellow') status = 1;
+  } else if (event.kind === EVENT_KINDS.SANCTION) {
+    const sanctionType = event.tags?.find(t => t[0] === 'sanction_type')?.[1];
+    if (sanctionType === 'ban') status = 3;
+    else status = 2; // suspension
+  } else if (event.kind === EVENT_KINDS.REVIEW_OUTCOME) {
+    const outcome = event.tags?.find(t => t[0] === 'outcome')?.[1];
+    if (outcome === 'dismissed') status = 0;
+    else status = 1; // downgraded = yellow at most
+  } else if ([EVENT_KINDS.MEMBERSHIP, EVENT_KINDS.GATE_LOCK, EVENT_KINDS.ATTENDANCE].includes(event.kind)) {
+    // Non-status-changing events: preserve any existing status
+    status = existing?.status ?? 0;
+  }
+
+  chainTipCache.set(fanPubkey, { tipEventId: event.id, status });
   // Store created_at for ordering comparison (internal use)
   const tip = chainTipCache.get(fanPubkey);
   tip._createdAt = event.created_at;

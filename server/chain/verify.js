@@ -93,7 +93,7 @@ export function verifyChain(events) {
  * Verify that the signer of an event is listed in the staff roster event
  * with an appropriate role.
  *
- * The staff roster event (kind 31000) has tags like:
+ * The staff roster event (kind 39001) has tags like:
  *   ["p", "<pubkey>", "<role>"]
  *
  * LIMITATION: The current check verifies against the current roster, not the
@@ -119,13 +119,35 @@ export function verifySignerAuthority(event, staffRosterEvent) {
 
   const role = staffEntry[2] || 'unknown';
 
-  // Sanctions require safety_officer or higher
+  // Cards require roaming_steward or above
+  if (event.kind === EVENT_KINDS.CARD) {
+    const cardRoles = ['roaming_steward', 'safety_officer', 'admin'];
+    if (!cardRoles.includes(role)) {
+      return {
+        authorised: false,
+        reason: `Signer role "${role}" insufficient for card events (requires roaming_steward or above)`,
+      };
+    }
+  }
+
+  // Sanctions require safety_officer or above
   if (event.kind === EVENT_KINDS.SANCTION) {
-    const sanctionRoles = ['safety_officer', 'admin', 'owner'];
+    const sanctionRoles = ['safety_officer', 'admin'];
     if (!sanctionRoles.includes(role)) {
       return {
         authorised: false,
         reason: `Signer role "${role}" insufficient for sanction events (requires safety_officer or above)`,
+      };
+    }
+  }
+
+  // Review outcomes require safety_officer or above
+  if (event.kind === EVENT_KINDS.REVIEW_OUTCOME) {
+    const reviewRoles = ['safety_officer', 'admin'];
+    if (!reviewRoles.includes(role)) {
+      return {
+        authorised: false,
+        reason: `Signer role "${role}" insufficient for review outcome events (requires safety_officer or above)`,
       };
     }
   }

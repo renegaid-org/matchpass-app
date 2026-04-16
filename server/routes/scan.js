@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { verifyVenueEntry } from '../venue-entry.js';
 
 // Replay prevention for venue entry events (60s TTL)
+const MAX_CONSUMED_SCANS = 10_000;
 const consumedScans = new Map();
 setInterval(() => {
   const cutoff = Date.now() - 60_000;
@@ -31,7 +32,12 @@ export default function createScanRouter({ chainTipCache, scanTracker }, opts = 
     if (eventId && consumedScans.has(eventId)) {
       return res.status(400).json({ decision: 'red', error: 'QR already scanned' });
     }
-    if (eventId) consumedScans.set(eventId, Date.now());
+    if (eventId) {
+      if (consumedScans.size >= MAX_CONSUMED_SCANS) {
+        return res.status(429).json({ decision: 'red', error: 'Too many scan requests' });
+      }
+      consumedScans.set(eventId, Date.now());
+    }
 
     // Duplicate admission check
     const gate = req.body.gate_id || null;

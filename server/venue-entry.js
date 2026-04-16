@@ -34,5 +34,16 @@ export function verifyVenueEntry(event, opts = {}) {
   if (x && !isValidPhotoHash(x)) throw new Error('Invalid x tag (photo hash) format');
   if (photoKey && !isValidPhotoKey(photoKey)) throw new Error('Invalid photo_key format');
 
+  if (blossom) {
+    try {
+      const url = new URL(blossom);
+      if (!['https:', 'http:'].includes(url.protocol)) {
+        throw new Error('Invalid blossom URL scheme');
+      }
+    } catch {
+      throw new Error('Invalid blossom URL');
+    }
+  }
+
   return { pubkey: event.pubkey, x, blossom, photoKey };
 }

@@ -48,6 +48,9 @@ export default function createScanRouter({ chainTipCache, scanTracker }, opts = 
 
     // Duplicate admission check
     const gate = req.body.gate_id || null;
+    if (gate && (typeof gate !== 'string' || gate.length > 50)) {
+      return res.status(400).json({ error: 'gate_id must be a string under 50 characters' });
+    }
     const staffId = req.staff?.pubkey || 'anonymous';
     const dupCheck = scanTracker.checkAndRecord(entry.pubkey, gate, staffId);
 

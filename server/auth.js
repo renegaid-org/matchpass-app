@@ -69,6 +69,11 @@ export function verifyNip98(rosterCache) {
         if (eventUrl.pathname !== expectedPath) {
           return res.status(401).json({ error: 'URL tag path mismatch' });
         }
+        // Verify host matches (defence in depth)
+        const reqHost = req.get?.('host') || req.headers?.host;
+        if (reqHost && eventUrl.host !== reqHost) {
+          return res.status(401).json({ error: 'URL tag host mismatch' });
+        }
       } catch {
         return res.status(401).json({ error: 'Invalid URL tag' });
       }

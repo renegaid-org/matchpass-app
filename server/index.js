@@ -8,7 +8,7 @@ import { ChainTipCache } from './chain-tip-cache.js';
 import { RosterCache } from './roster-cache.js';
 import { ScanTracker } from './scan-tracker.js';
 import { ClubDiscovery } from './club-discovery.js';
-import { connectAndSubscribe, getRelayStatus } from './relay.js';
+import { connectAndSubscribe, getRelayStatus, resubscribeRoster } from './relay.js';
 import { verifyNip98, requireRole } from './auth.js';
 
 import createScanRouter from './routes/scan.js';
@@ -53,11 +53,7 @@ app.use(express.static(join(__dirname, '..', 'public')));
 
 // Health/status (unauthenticated)
 app.get('/api/gate/status', (req, res) => {
-  res.json({
-    relay: getRelayStatus(),
-    cache: { fans: chainTipCache.size, clubs: rosterCache.size },
-    scans: scanTracker.getStats(),
-  });
+  res.json({ ok: true, relay: getRelayStatus() });
 });
 
 // Auth middleware
@@ -81,7 +77,12 @@ const RELAY_URL = process.env.RELAY_URL || 'wss://relay.trotters.cc';
 const CLUB_API = process.env.MATCHPASS_CLUB_API || 'https://matchpass.club';
 
 async function start() {
-  const discovery = new ClubDiscovery(CLUB_API);
+  const discovery = new ClubDiscovery(CLUB_API, {
+    onChange: (pubkeys) => {
+      console.log(`Club list changed: ${pubkeys.length} club(s) — resubscribing`);
+      resubscribeRoster(pubkeys);
+    },
+  });
   const clubPubkeys = await discovery.fetch();
   discovery.startPeriodicRefresh();
 

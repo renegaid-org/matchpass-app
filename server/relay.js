@@ -51,7 +51,11 @@ export async function connectAndSubscribe(relayUrl, caches, clubPubkeys) {
   if (clubPubkeys.length > 0) {
     const rosterEvents = await collectEvents(relay, [{ kinds: [STAFF_ROSTER_KIND], authors: clubPubkeys }]);
     for (const event of rosterEvents) {
-      if (verifyEvent(event)) rosterCache.set(event.pubkey, event);
+      if (verifyEvent(event)) {
+        try { rosterCache.set(event.pubkey, event); } catch (err) {
+          console.error('Relay: malformed roster event, skipping:', err.message);
+        }
+      }
     }
     console.log(`Relay: fetched ${rosterEvents.length} roster event(s)`);
   }
@@ -95,8 +99,12 @@ function subscribeToRosterEvents(r, rosterCache, clubPubkeys) {
     {
       onevent: (event) => {
         if (!verifyEvent(event)) return;
-        rosterCache.set(event.pubkey, event);
-        console.log(`Relay: roster update from ${event.pubkey.slice(0, 12)}`);
+        try {
+          rosterCache.set(event.pubkey, event);
+          console.log(`Relay: roster update from ${event.pubkey.slice(0, 12)}`);
+        } catch (err) {
+          console.error('Relay: malformed roster event, skipping:', err.message);
+        }
       },
     }
   );
@@ -215,6 +223,18 @@ function handleChainEvent(event, chainTipCache, rosterCache) {
 export async function publishEvent(event) {
   if (!relay) throw new Error('Relay not connected');
   await relay.publish(event);
+}
+
+/**
+ * Update the club pubkey list and resubscribe to roster events.
+ * Called when ClubDiscovery detects a change.
+ * @param {string[]} clubPubkeys - Updated list of club pubkeys
+ */
+export function resubscribeRoster(clubPubkeys) {
+  _clubPubkeys = clubPubkeys;
+  if (relay && _caches) {
+    subscribeToRosterEvents(relay, _caches.rosterCache, clubPubkeys);
+  }
 }
 
 /**

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { verifyEvent } from 'nostr-tools/pure';
-import { EVENT_KINDS, isValidPubkey } from '../chain/types.js';
+import { EVENT_KINDS, isValidPubkey, isValidCardType, isValidCategory, isValidSanctionType, isValidReviewOutcome } from '../chain/types.js';
 import { verifySignerAuthority } from '../chain/verify.js';
 import { publishEvent } from '../relay.js';
 
@@ -55,6 +55,17 @@ export default function createEventRouter({ chainTipCache, rosterCache }) {
     const fanPubkey = pTag[1];
 
     return withFanLock(fanPubkey, async () => {
+      if (event.kind === EVENT_KINDS.MEMBERSHIP) {
+        // Membership must be self-signed by the fan
+        if (event.pubkey !== fanPubkey) {
+          return res.status(400).json({ error: 'Membership event must be signed by the fan (pubkey mismatch)' });
+        }
+        // Prevent duplicate membership (chain reset attack)
+        if (chainTipCache.has(fanPubkey)) {
+          return res.status(409).json({ error: 'Fan already has a chain — cannot resubmit membership' });
+        }
+      }
+
       // Signer authority (skip for membership — signed by fan)
       if (event.kind !== EVENT_KINDS.MEMBERSHIP) {
         const roster = rosterCache.get(req.staff?.clubPubkey);
@@ -81,11 +92,38 @@ export default function createEventRouter({ chainTipCache, rosterCache }) {
         }
       }
 
+      // Tag content validation per kind
+      const getTag = (name) => event.tags?.find(t => Array.isArray(t) && t[0] === name)?.[1];
+
+      if (event.kind === EVENT_KINDS.CARD) {
+        const cardType = getTag('card_type');
+        const category = getTag('category');
+        if (!isValidCardType(cardType)) return res.status(400).json({ error: 'Invalid card_type tag' });
+        if (!isValidCategory(category)) return res.status(400).json({ error: 'Invalid category tag' });
+      }
+
+      if (event.kind === EVENT_KINDS.SANCTION) {
+        const sanctionType = getTag('sanction_type');
+        if (!isValidSanctionType(sanctionType)) return res.status(400).json({ error: 'Invalid sanction_type tag' });
+        const startDate = getTag('start_date');
+        if (!startDate || !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
+          return res.status(400).json({ error: 'Invalid start_date tag' });
+        }
+      }
+
+      if (event.kind === EVENT_KINDS.REVIEW_OUTCOME) {
+        const outcome = getTag('outcome');
+        const reviews = getTag('reviews');
+        if (!isValidReviewOutcome(outcome)) return res.status(400).json({ error: 'Invalid outcome tag' });
+        if (!reviews || !/^[0-9a-f]{64}$/.test(reviews)) return res.status(400).json({ error: 'Invalid reviews tag' });
+      }
+
       // Publish to relay
       try {
         await publishEvent(event);
       } catch (err) {
-        return res.status(502).json({ error: `Relay publish failed: ${err.message}` });
+        console.error('Relay publish failed:', err.message);
+        return res.status(502).json({ error: 'Relay publish failed' });
       }
 
       // Update cache — derive status from the event kind

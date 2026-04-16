@@ -1,5 +1,7 @@
 // server/scan-tracker.js — Ephemeral daily admission log (cleared at midnight)
 
+const MAX_DUPLICATE_FLAGS = 1000;
+
 export class ScanTracker {
   constructor() {
     this._admissions = new Map(); // fanPubkey -> { gate, time, staffId }
@@ -14,7 +16,9 @@ export class ScanTracker {
     if (prior) {
       const msSince = Date.now() - prior.time;
       if (msSince < 30_000 && prior.staffId === staffId) return { stewardError: true };
-      this._duplicateFlags.push({ fanPubkey, firstGate: prior.gate, secondGate: gate, time: new Date() });
+      if (this._duplicateFlags.length < MAX_DUPLICATE_FLAGS) {
+        this._duplicateFlags.push({ fanPubkey, firstGate: prior.gate, secondGate: gate, time: new Date() });
+      }
       return { duplicate: true };
     }
     this._admissions.set(fanPubkey, { gate, time: Date.now(), staffId });

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import express from 'express';
 import { ChainTipCache } from '../../server/chain-tip-cache.js';
 import { ScanTracker } from '../../server/scan-tracker.js';
-import createScanRouter from '../../server/routes/scan.js';
+import createScanRouter, { _resetScanCache } from '../../server/routes/scan.js';
 
 function buildApp(caches, routeOpts = {}) {
   const app = express();
@@ -15,11 +15,11 @@ function buildApp(caches, routeOpts = {}) {
   return app;
 }
 
-function makeVenueEvent(pubkey = 'a'.repeat(64)) {
+function makeVenueEvent(pubkey = 'a'.repeat(64), id = 'd'.repeat(64)) {
   return {
     kind: 21235, pubkey, created_at: Math.floor(Date.now() / 1000),
     tags: [['t', 'signet-venue-entry'], ['x', 'b'.repeat(64)], ['blossom', 'https://blossom.example.com'], ['photo_key', 'c'.repeat(64)]],
-    content: '', id: Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2),
+    content: '', id,
     sig: 'e'.repeat(128),
   };
 }
@@ -43,6 +43,7 @@ describe('POST /scan', () => {
   beforeEach(() => {
     chainTipCache = new ChainTipCache();
     scanTracker = new ScanTracker();
+    _resetScanCache();
   });
 
   it('returns 400 without venue_entry_event', async () => {

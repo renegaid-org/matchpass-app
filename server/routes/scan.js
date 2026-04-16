@@ -11,6 +11,10 @@ setInterval(() => {
   }
 }, 15_000);
 
+export function _resetScanCache() {
+  consumedScans.clear();
+}
+
 export default function createScanRouter({ chainTipCache, scanTracker }, opts = {}) {
   const router = Router();
 
@@ -27,17 +31,20 @@ export default function createScanRouter({ chainTipCache, scanTracker }, opts = 
       return res.status(400).json({ decision: 'red', error: err.message });
     }
 
-    // Replay check
+    // Validate event ID (mandatory)
     const eventId = venue_entry_event.id;
-    if (eventId && consumedScans.has(eventId)) {
+    if (!eventId || typeof eventId !== 'string' || !/^[0-9a-f]{64}$/.test(eventId)) {
+      return res.status(400).json({ decision: 'red', error: 'Missing or invalid event ID' });
+    }
+
+    // Replay check
+    if (consumedScans.has(eventId)) {
       return res.status(400).json({ decision: 'red', error: 'QR already scanned' });
     }
-    if (eventId) {
-      if (consumedScans.size >= MAX_CONSUMED_SCANS) {
-        return res.status(429).json({ decision: 'red', error: 'Too many scan requests' });
-      }
-      consumedScans.set(eventId, Date.now());
+    if (consumedScans.size >= MAX_CONSUMED_SCANS) {
+      return res.status(429).json({ decision: 'red', error: 'Too many scan requests' });
     }
+    consumedScans.set(eventId, Date.now());
 
     // Duplicate admission check
     const gate = req.body.gate_id || null;

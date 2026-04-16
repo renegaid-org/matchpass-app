@@ -37,18 +37,22 @@ export function verifyNip98(rosterCache) {
         return res.status(401).json({ error: 'Invalid signature' });
       }
 
+      if (!event.id || !/^[0-9a-f]{64}$/.test(event.id)) {
+        return res.status(401).json({ error: 'Invalid auth event ID' });
+      }
+
       const now = Math.floor(Date.now() / 1000);
       if (Math.abs(now - event.created_at) > 60) {
         return res.status(401).json({ error: 'Auth event expired' });
       }
 
-      if (event.id && consumedEventIds.has(event.id)) {
+      if (consumedEventIds.has(event.id)) {
         return res.status(401).json({ error: 'Auth event already used' });
       }
       if (consumedEventIds.size >= MAX_CONSUMED) {
         return res.status(429).json({ error: 'Too many auth requests' });
       }
-      if (event.id) consumedEventIds.set(event.id, Date.now());
+      consumedEventIds.set(event.id, Date.now());
 
       const methodTag = event.tags?.find(t => t[0] === 'method')?.[1];
       if (!methodTag || methodTag.toUpperCase() !== req.method) {

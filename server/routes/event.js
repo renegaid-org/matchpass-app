@@ -35,6 +35,15 @@ export default function createEventRouter({ chainTipCache, rosterCache }) {
       return res.status(400).json({ error: 'Invalid event signature' });
     }
 
+    // Validate created_at
+    const now = Math.floor(Date.now() / 1000);
+    if (event.created_at > now + 120) {
+      return res.status(400).json({ error: 'Event timestamp too far in the future' });
+    }
+    if (event.created_at < now - 86400) {
+      return res.status(400).json({ error: 'Event timestamp too old (>24h)' });
+    }
+
     if (!ALLOWED_KINDS.has(event.kind)) {
       return res.status(400).json({ error: `Event kind ${event.kind} not allowed` });
     }

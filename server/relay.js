@@ -3,8 +3,14 @@ import { verifyEvent } from 'nostr-tools/pure';
 import { EVENT_KINDS, STAFF_ROSTER_KIND } from './chain/types.js';
 
 let relay = null;
+let reconnectAttempts = 0;
+let reconnectTimer = null;
+let _caches = null;
+let _clubPubkeys = [];
+let _relayUrl = null;
 
 function shutdown() {
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
   if (relay) { relay.close(); relay = null; }
 }
 process.on('SIGTERM', shutdown);
@@ -21,6 +27,11 @@ process.on('SIGINT', shutdown);
 export async function connectAndSubscribe(relayUrl, caches, clubPubkeys) {
   const { chainTipCache, rosterCache } = caches;
 
+  // Store for reconnection
+  _relayUrl = relayUrl;
+  _caches = caches;
+  _clubPubkeys = clubPubkeys;
+
   try {
     relay = await Relay.connect(relayUrl);
     console.log(`Relay: connected to ${relayUrl}`);
@@ -29,6 +40,12 @@ export async function connectAndSubscribe(relayUrl, caches, clubPubkeys) {
     relay = null;
     return;
   }
+
+  relay.onclose = () => {
+    console.log('Relay: connection lost');
+    relay = null;
+    reconnect(_relayUrl);
+  };
 
   // 1. Fetch existing roster events first (needed for signer context)
   if (clubPubkeys.length > 0) {
@@ -43,34 +60,78 @@ export async function connectAndSubscribe(relayUrl, caches, clubPubkeys) {
   const chainKinds = Object.values(EVENT_KINDS);
   const chainEvents = await collectEvents(relay, [{ kinds: chainKinds }]);
   for (const event of chainEvents) {
-    if (verifyEvent(event)) handleChainEvent(event, chainTipCache);
+    if (verifyEvent(event)) handleChainEvent(event, chainTipCache, rosterCache);
   }
   console.log(`Relay: fetched ${chainEvents.length} chain event(s), ${chainTipCache.size} fan tip(s)`);
 
-  // 3. Subscribe to live chain events
-  relay.subscribe(
+  subscribeToChainEvents(relay, caches);
+  subscribeToRosterEvents(relay, rosterCache, clubPubkeys);
+}
+
+/**
+ * Subscribe to live chain events.
+ */
+function subscribeToChainEvents(r, caches) {
+  const { chainTipCache, rosterCache } = caches;
+  const chainKinds = Object.values(EVENT_KINDS);
+  r.subscribe(
     [{ kinds: chainKinds }],
     {
       onevent: (event) => {
         if (!verifyEvent(event)) return;
-        handleChainEvent(event, chainTipCache);
+        handleChainEvent(event, chainTipCache, rosterCache);
       },
     }
   );
+}
 
-  // 4. Subscribe to live roster events
-  if (clubPubkeys.length > 0) {
-    relay.subscribe(
-      [{ kinds: [STAFF_ROSTER_KIND], authors: clubPubkeys }],
-      {
-        onevent: (event) => {
-          if (!verifyEvent(event)) return;
-          rosterCache.set(event.pubkey, event);
-          console.log(`Relay: roster update from ${event.pubkey.slice(0, 12)}`);
-        },
-      }
-    );
-  }
+/**
+ * Subscribe to live roster events.
+ */
+function subscribeToRosterEvents(r, rosterCache, clubPubkeys) {
+  if (clubPubkeys.length === 0) return;
+  r.subscribe(
+    [{ kinds: [STAFF_ROSTER_KIND], authors: clubPubkeys }],
+    {
+      onevent: (event) => {
+        if (!verifyEvent(event)) return;
+        rosterCache.set(event.pubkey, event);
+        console.log(`Relay: roster update from ${event.pubkey.slice(0, 12)}`);
+      },
+    }
+  );
+}
+
+/**
+ * Reconnect with exponential backoff (max 60s).
+ */
+async function reconnect(relayUrl) {
+  if (reconnectTimer) return; // already scheduled
+  const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 60000);
+  reconnectAttempts++;
+  console.log(`Relay: reconnecting in ${delay}ms (attempt ${reconnectAttempts})`);
+
+  reconnectTimer = setTimeout(async () => {
+    reconnectTimer = null;
+    try {
+      relay = await Relay.connect(relayUrl);
+      console.log(`Relay: reconnected to ${relayUrl}`);
+      reconnectAttempts = 0;
+
+      relay.onclose = () => {
+        console.log('Relay: connection lost');
+        relay = null;
+        reconnect(relayUrl);
+      };
+
+      subscribeToChainEvents(relay, _caches);
+      subscribeToRosterEvents(relay, _caches.rosterCache, _clubPubkeys);
+    } catch (err) {
+      console.error(`Relay: reconnect failed — ${err.message}`);
+      relay = null;
+      reconnect(relayUrl);
+    }
+  }, delay);
 }
 
 /**
@@ -99,8 +160,21 @@ function collectEvents(relay, filters, timeoutMs = 15000) {
  * Handle a chain event — update the chain tip cache.
  * Uses created_at as a simple ordering heuristic.
  * Status is derived from the event kind; non-status events preserve existing status.
+ *
+ * Membership events (31100) are signed by the fan — accepted if signature valid.
+ * All other events must be signed by a rostered staff member.
  */
-function handleChainEvent(event, chainTipCache) {
+function handleChainEvent(event, chainTipCache, rosterCache) {
+  // Reject events with created_at more than 10 minutes in the future
+  const now = Math.floor(Date.now() / 1000);
+  if (event.created_at > now + 600) return;
+
+  // Signer authority check: non-membership events must come from rostered staff
+  if (event.kind !== EVENT_KINDS.MEMBERSHIP) {
+    const staff = rosterCache?.findStaff(event.pubkey);
+    if (!staff) return; // Signer not in any club roster — reject silently
+  }
+
   const pTag = event.tags?.find(t => Array.isArray(t) && t[0] === 'p');
   if (!pTag || !pTag[1]) return;
   const fanPubkey = pTag[1];

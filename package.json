@@ -1,0 +1,24 @@
+{
+  "name": "matchpass-gate",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "Stateless gate verification server for MatchPass",
+  "scripts": {
+    "start": "node server/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "cors": "^2.8.5",
+    "express-rate-limit": "^7.4.1",
+    "nostr-tools": "^2.10.4",
+    "@noble/curves": "^1.8.1",
+    "@noble/hashes": "^1.7.1",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "vitest": "^3.1.1"
+  }
+}

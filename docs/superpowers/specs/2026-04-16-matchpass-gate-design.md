@@ -16,7 +16,7 @@ participation, it doesn't gatekeep entry.
 
 ## Architecture Principle: No Central Fan Database
 
-Fan data lives on the credential chain (Nostr events, kinds 31100–31105) and in
+Fan data lives on the credential chain (Nostr events, kinds 31900–31905) and in
 the fan's Signet app. Never in a central database.
 
 matchpass-gate is a **thin real-time verification gateway** — in-memory caches,
@@ -41,7 +41,7 @@ matchpass.club stays as-is (Postgres-backed, unchanged).
 ### 1. In-Memory Chain Tip Cache
 
 On startup, the server connects to the relay (`wss://relay.trotters.cc`) and
-subscribes to chain events (kinds 31100–31105) for known clubs.
+subscribes to chain events (kinds 31900–31905) for known clubs.
 
 **Club discovery:** The gate server fetches the club list from the
 matchpass.club API (public endpoint, returns pubkeys of verified clubs). This is
@@ -124,21 +124,21 @@ the signed event to this endpoint.
 
 **Flow:**
 1. Verify Nostr event signature (`verifyEvent`)
-2. Validate event kind is in allowed set (31100–31105)
+2. Validate event kind is in allowed set (31900–31905)
 3. Verify signer authority against staff roster cache
 4. Validate chain linkage (`previous` tag matches current tip for this fan)
 5. Publish event to relay
 6. Update in-memory chain tip cache
 
 **Accepted event kinds:**
-- 31100 — Membership (signed by fan)
-- 31101 — Gate-lock (signed by steward)
-- 31102 — Attendance (signed by steward)
-- 31103 — Card (signed by steward, roaming_steward or above)
-- 31104 — Sanction (signed by safety_officer or above)
-- 31105 — Review outcome: dismissal or downgrade (signed by safety_officer or above)
+- 31900 — Membership (signed by fan)
+- 31901 — Gate-lock (signed by steward)
+- 31902 — Attendance (signed by steward)
+- 31903 — Card (signed by steward, roaming_steward or above)
+- 31904 — Sanction (signed by safety_officer or above)
+- 31905 — Review outcome: dismissal or downgrade (signed by safety_officer or above)
 
-**Kind 31105 (new) — Review Outcome:**
+**Kind 31905 (new) — Review Outcome:**
 References the original card/sanction event ID. Only dismissals and downgrades
 produce chain events. A "confirmed" review changes nothing on the chain.
 
@@ -147,7 +147,7 @@ Tags: `['d', '{fanPubkey}:review:{uuid}']`, `['p', fanPubkey]`,
 `['outcome', 'dismissed'|'downgraded']`
 
 Status computation in `chain/verify.js` already walks the chain. It needs
-updating to recognise kind 31105 and skip/downgrade the referenced card.
+updating to recognise kind 31905 and skip/downgrade the referenced card.
 
 ### 5. Chain Tip Query
 
@@ -182,9 +182,9 @@ client-side relay query in the PWA or a separate offline analytics tool.
 
 | File | Destination | Changes |
 |------|-------------|---------|
-| `server/chain/types.js` | matchpass-gate | Add kind 31105 |
+| `server/chain/types.js` | matchpass-gate | Add kind 31905 |
 | `server/chain/events.js` | matchpass-gate | Add `createReviewOutcome()` |
-| `server/chain/verify.js` | matchpass-gate | Handle kind 31105 in `getCurrentStatus()` |
+| `server/chain/verify.js` | matchpass-gate | Handle kind 31905 in `getCurrentStatus()` |
 | `server/chain/qr-proof.js` | DROPPED | Compact QR proof replaced by venue entry event (kind 21235) |
 | `server/auth.js` | matchpass-gate | NIP-98 verification, unchanged |
 | `server/roster.js` | matchpass-gate | Unchanged (parsing) |
@@ -213,9 +213,9 @@ client-side relay query in the PWA or a separate offline analytics tool.
 | `POST /api/gate/event` | Accept steward-signed events, publish to relay |
 | `GET /api/gate/tip/:pubkey` | Chain tip lookup for PWA event building |
 | `GET /api/gate/dashboard` | Today's ephemeral gate stats |
-| Kind 31105 event | Review outcome (dismissal/downgrade) on chain |
+| Kind 31905 event | Review outcome (dismissal/downgrade) on chain |
 | `chain/events.js` update | `createReviewOutcome()` function |
-| `chain/verify.js` update | Handle 31105 in status computation |
+| `chain/verify.js` update | Handle 31905 in status computation |
 
 ## Unlinked Incident Reports
 
@@ -239,7 +239,7 @@ entirely in matchpass-gate and the steward PWA. Signet provides:
   Contains pubkey, encrypted photo hash (`x` tag), Blossom URL, photo key.
   Refreshes every 30 seconds.
 - **Steward signing:** NIP-46 remote signer. The steward PWA constructs chain
-  event templates (kinds 31100–31105) and asks Signet to sign them. Signet
+  event templates (kinds 31900–31905) and asks Signet to sign them. Signet
   signs without needing to understand chain semantics.
 - **Steward auth:** NIP-98 HTTP auth headers, already implemented.
 

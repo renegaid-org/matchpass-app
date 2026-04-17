@@ -169,7 +169,7 @@ function collectEvents(relay, filters, timeoutMs = 15000) {
  * Uses created_at as a simple ordering heuristic.
  * Status is derived from the event kind; non-status events preserve existing status.
  *
- * Membership events (31100) are signed by the fan — accepted if signature valid.
+ * Membership events (31900) are signed by the fan — accepted if signature valid.
  * All other events must be signed by a rostered staff member.
  */
 function handleChainEvent(event, chainTipCache, rosterCache) {

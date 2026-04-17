@@ -1,15 +1,15 @@
 // server/chain/types.js — Event kind constants and controlled vocabularies
 
 export const EVENT_KINDS = {
-  MEMBERSHIP: 31100,
-  GATE_LOCK: 31101,
-  ATTENDANCE: 31102,
-  CARD: 31103,
-  SANCTION: 31104,
-  REVIEW_OUTCOME: 31105,
+  MEMBERSHIP: 31900,
+  GATE_LOCK: 31901,
+  ATTENDANCE: 31902,
+  CARD: 31903,
+  SANCTION: 31904,
+  REVIEW_OUTCOME: 31905,
 };
 
-export const STAFF_ROSTER_KIND = 39001;
+export const STAFF_ROSTER_KIND = 31920;
 
 export const CARD_CATEGORIES = [
   'assault',

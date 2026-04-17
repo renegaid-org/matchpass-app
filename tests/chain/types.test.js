@@ -4,8 +4,8 @@ import { describe, it, expect } from 'vitest';
 import { EVENT_KINDS, REVIEW_OUTCOMES, isValidReviewOutcome } from '../../server/chain/types.js';
 
 describe('EVENT_KINDS', () => {
-  it('REVIEW_OUTCOME equals 31105', () => {
-    expect(EVENT_KINDS.REVIEW_OUTCOME).toBe(31105);
+  it('REVIEW_OUTCOME equals 31905', () => {
+    expect(EVENT_KINDS.REVIEW_OUTCOME).toBe(31905);
   });
 });
 

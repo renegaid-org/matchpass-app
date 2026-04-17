@@ -1,4 +1,4 @@
-// server/roster.js — Staff roster event parser and builder (kind 39001)
+// server/roster.js — Staff roster event parser and builder (kind 31920, NIP-ROSTER draft)
 
 import { STAFF_ROSTER_KIND } from './chain/types.js';
 import { isValidPubkey } from './chain/types.js';
@@ -15,10 +15,10 @@ export const VALID_STAFF_ROLES = [
 ];
 
 /**
- * Parse a kind-39001 staff roster Nostr event into a plain staff array.
+ * Parse a kind-31920 staff roster Nostr event into a plain staff array.
  *
  * Validation rules:
- *   - event.kind must be 39001
+ *   - event.kind must be 31920
  *   - tags must include a ['d', 'staff-roster'] entry
  *   - p-tags with an invalid pubkey (not 64 lowercase hex chars) are skipped
  *   - p-tags with an unrecognised role are skipped
@@ -56,7 +56,7 @@ export function parseRosterEvent(event) {
 }
 
 /**
- * Build an unsigned kind-39001 roster event from a staff list.
+ * Build an unsigned kind-31920 roster event from a staff list.
  *
  * The returned object intentionally omits `id`, `sig`, and `created_at` so
  * callers can sign it with their preferred key-management layer.

@@ -4,7 +4,7 @@ import { RosterCache } from '../server/roster-cache.js';
 const clubPubkey = 'c'.repeat(64);
 const staffPubkey = 'a'.repeat(64);
 const rosterEvent = {
-  id: 'r1', kind: 39001, pubkey: clubPubkey, created_at: 1000,
+  id: 'r1', kind: 31920, pubkey: clubPubkey, created_at: 1000,
   tags: [['d', 'staff-roster'], ['p', staffPubkey, 'gate_steward', 'Alice']],
   content: '', sig: 'x'.repeat(128),
 };

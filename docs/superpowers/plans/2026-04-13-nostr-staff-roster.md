@@ -1,14 +1,16 @@
 # Nostr-Sourced Staff Roster Implementation Plan
 
+> **NOTE (2026-04-17):** Kind allocations in this plan have been renumbered. Roster kind moved from old 39001 → 31920 (NIP-29 Simple Groups collision); fan chain kinds moved from old 31100–31105 → 31900–31905 (TROTT translation-language collision). The ranges below have been updated. See `CLAUDE.md` and `docs/superpowers/specs/2026-04-16-matchpass-gate-design.md` for current truth.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace PostgreSQL as the source of truth for staff identity with Nostr roster events published by clubs, making the DB a write-through cache.
 
-**Architecture:** Clubs publish a replaceable kind-39001 Nostr event (d-tag `staff-roster`) listing staff pubkeys, roles, and display names as p-tags. MatchPass subscribes to these events, caches them in the existing `staff` table (adding `roster_event_id` and `deactivated_at` columns), and uses the cache for auth lookups. The staff table's foreign keys to 8 other tables remain intact. GDPR erasure pseudonymises rather than deletes.
+**Architecture:** Clubs publish a replaceable kind-31920 Nostr event (d-tag `staff-roster`) listing staff pubkeys, roles, and display names as p-tags. MatchPass subscribes to these events, caches them in the existing `staff` table (adding `roster_event_id` and `deactivated_at` columns), and uses the cache for auth lookups. The staff table's foreign keys to 8 other tables remain intact. GDPR erasure pseudonymises rather than deletes.
 
 **Tech Stack:** Node.js/Express, PostgreSQL, nostr-tools, vitest
 
-**Kind number rationale:** 39001 is a parameterised replaceable event (NIP-01 kind range 30000-39999). Using 39001 avoids collision with existing fan credential kinds (31100-31104) and cross-club sanction kinds (30078-30080). The d-tag `staff-roster` scopes it per club.
+**Kind number rationale:** 31920 is a parameterised replaceable event (NIP-01 kind range 30000-39999). Using 31920 avoids collision with existing fan credential kinds (31900-31904) and cross-club sanction kinds (30078-30080). The d-tag `staff-roster` scopes it per club.
 
 ---
 
@@ -60,14 +62,14 @@ In `server/chain/types.js`, add to EVENT_KINDS:
 
 ```javascript
 export const EVENT_KINDS = {
-  MEMBERSHIP: 31100,
-  GATE_LOCK: 31101,
-  ATTENDANCE: 31102,
-  CARD: 31103,
-  SANCTION: 31104,
+  MEMBERSHIP: 31900,
+  GATE_LOCK: 31901,
+  ATTENDANCE: 31902,
+  CARD: 31903,
+  SANCTION: 31904,
 };
 
-export const STAFF_ROSTER_KIND = 39001;
+export const STAFF_ROSTER_KIND = 31920;
 ```
 
 - [ ] **Step 2: Write failing tests for roster parsing**
@@ -86,7 +88,7 @@ function makeRosterEvent(pubkey, pTags, opts = {}) {
   return {
     id: 'dd'.repeat(32),
     pubkey,
-    kind: 39001,
+    kind: 31920,
     created_at: Math.floor(Date.now() / 1000),
     tags: [
       ['d', 'staff-roster'],
@@ -175,7 +177,7 @@ describe('buildRosterEvent', () => {
       { pubkey: STAFF_PUBKEY_2, role: 'admin', displayName: 'Bob' },
     ];
     const event = buildRosterEvent(staff);
-    expect(event.kind).toBe(39001);
+    expect(event.kind).toBe(31920);
     expect(event.content).toBe('');
     const dTag = event.tags.find(t => t[0] === 'd');
     expect(dTag[1]).toBe('staff-roster');
@@ -196,7 +198,7 @@ Expected: FAIL — module `../../server/roster.js` not found
 Create `server/roster.js`:
 
 ```javascript
-// server/roster.js — Parse and build staff roster Nostr events (kind 39001)
+// server/roster.js — Parse and build staff roster Nostr events (kind 31920)
 
 import { STAFF_ROSTER_KIND } from './chain/types.js';
 
@@ -209,7 +211,7 @@ const VALID_ROLES = [
  * Parse a staff roster Nostr event into a structured object.
  *
  * Event format:
- *   kind: 39001 (parameterised replaceable)
+ *   kind: 31920 (parameterised replaceable)
  *   tags: [["d", "staff-roster"], ["p", pubkey, role, displayName], ...]
  *   content: ""
  *   signed by: club's Nostr key
@@ -276,7 +278,7 @@ Expected: all 7 tests PASS
 
 ```bash
 git add server/chain/types.js server/roster.js tests/server/roster.test.js
-git commit -m "feat: add staff roster event parser (kind 39001)"
+git commit -m "feat: add staff roster event parser (kind 31920)"
 ```
 
 ---
@@ -1003,7 +1005,7 @@ MatchPass subscribes to these events and uses them for staff authorisation.
 
 ## Event Format
 
-- **Kind:** 39001 (parameterised replaceable, NIP-01)
+- **Kind:** 31920 (parameterised replaceable, NIP-01)
 - **d-tag:** `staff-roster`
 - **p-tags:** One per staff member: `["p", "<hex-pubkey>", "<role>", "<display-name>"]`
 - **Content:** empty string
@@ -1023,7 +1025,7 @@ MatchPass subscribes to these events and uses them for staff authorisation.
 
 ```json
 {
-  "kind": 39001,
+  "kind": 31920,
   "tags": [
     ["d", "staff-roster"],
     ["p", "1fce2009b4caf3aee06338757d1f1aeecfcaa46800b77b19e9cfc16dbc9b1d69", "admin", "Test Admin"],
@@ -1099,7 +1101,7 @@ describe('roster → auth integration', () => {
     const event = {
       id: 'dd'.repeat(32),
       pubkey: CLUB_PUBKEY,
-      kind: 39001,
+      kind: 31920,
       created_at: Math.floor(Date.now() / 1000),
       tags: [
         ['d', 'staff-roster'],
@@ -1230,7 +1232,7 @@ git commit -m "chore: bump SW cache to v3 for roster changes"
 | File | Action | Purpose |
 |------|--------|---------|
 | `db/migrations/015_add_roster_tracking.sql` | Create | Add `roster_event_id`, `deactivated_at`, `erased_at` columns |
-| `server/chain/types.js` | Modify | Add `STAFF_ROSTER_KIND = 39001` constant |
+| `server/chain/types.js` | Modify | Add `STAFF_ROSTER_KIND = 31920` constant |
 | `server/roster.js` | Create | Parse and build staff roster Nostr events |
 | `server/roster-cache.js` | Create | Upsert parsed rosters into staff table cache |
 | `server/nostr.js` | Modify | Subscribe to roster events, fetch on startup |

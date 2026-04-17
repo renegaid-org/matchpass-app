@@ -21,7 +21,7 @@ who scan, get green, and enjoy the match.
 ## Architecture — NO central fan database
 
 This server is a **stateless, in-memory-only verification gateway**. Fan data
-lives on the credential chain (Nostr events, kinds 31100-31105) and in the
+lives on the credential chain (Nostr events, kinds 31900-31905) and in the
 fan's Signet app. Nothing persists. Nothing to erase.
 
 - Chain tips: in-memory Map, rebuilt from relay on restart

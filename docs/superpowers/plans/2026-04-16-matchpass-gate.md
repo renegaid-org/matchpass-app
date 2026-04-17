@@ -1,10 +1,12 @@
 # matchpass-gate Implementation Plan
 
+> **NOTE (2026-04-17):** Kind allocations renumbered. Chain kinds moved from 31100–31105 → 31900–31905; roster from 39001 → 31920. The numbers below have been updated. See `docs/superpowers/specs/2026-04-16-matchpass-gate-design.md` for current truth.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build matchpass-gate — a stateless, in-memory-only gate verification server that replaces matchpass-app's fan-facing routes.
 
-**Architecture:** Express server with zero persistence. Three in-memory Maps (chain tips, roster, scan tracker) populated from a Nostr relay subscription. Four HTTP endpoints behind NIP-98 auth. Fan presents a kind-21235 venue entry event at the gate; steward submits pre-signed chain events (kinds 31100-31105) that the server validates and publishes to the relay.
+**Architecture:** Express server with zero persistence. Three in-memory Maps (chain tips, roster, scan tracker) populated from a Nostr relay subscription. Four HTTP endpoints behind NIP-98 auth. Fan presents a kind-21235 venue entry event at the gate; steward submits pre-signed chain events (kinds 31900-31905) that the server validates and publishes to the relay.
 
 **Tech Stack:** Node.js, Express, nostr-tools 2.x, @noble/curves (Schnorr), Vitest for tests.
 
@@ -31,9 +33,9 @@ matchpass-gate/
     validation.js             # Carried over from matchpass-app (pure functions)
     roster.js                 # Carried over from matchpass-app (pure parsing)
     chain/
-      types.js                # Carried over + kind 31105 + REVIEW_OUTCOME
+      types.js                # Carried over + kind 31905 + REVIEW_OUTCOME
       events.js               # Carried over + createReviewOutcome()
-      verify.js               # Carried over + handle 31105 in getCurrentStatus()
+      verify.js               # Carried over + handle 31905 in getCurrentStatus()
       index.js                # Re-exports
     routes/
       scan.js                 # POST /api/gate/scan
@@ -147,7 +149,7 @@ git commit -m "chore: scaffold matchpass-gate project with carry-over files"
 
 ---
 
-### Task 2: Chain library — carry over and add kind 31105
+### Task 2: Chain library — carry over and add kind 31905
 
 **Files:**
 - Create: `matchpass-gate/server/chain/types.js` (from matchpass-app + additions)
@@ -168,12 +170,12 @@ cp ../matchpass-app/server/chain/verify.js server/chain/verify.js
 cp ../matchpass-app/server/chain/index.js server/chain/index.js
 ```
 
-- [ ] **Step 2: Add kind 31105 to types.js**
+- [ ] **Step 2: Add kind 31905 to types.js**
 
 Add to `EVENT_KINDS` object:
 
 ```js
-REVIEW_OUTCOME: 31105,
+REVIEW_OUTCOME: 31905,
 ```
 
 Add validation function:
@@ -192,7 +194,7 @@ export function isValidReviewOutcome(outcome) {
 import { isValidReviewOutcome } from './types.js';
 
 /**
- * Create a kind 31105 review outcome event (signed by safety officer).
+ * Create a kind 31905 review outcome event (signed by safety officer).
  */
 export function createReviewOutcome(fanPubkey, reviewedEventId, outcome, previousEventId, signerSeckey) {
   if (!isValidPubkey(fanPubkey)) throw new Error('Invalid fan pubkey');
@@ -219,7 +221,7 @@ export function createReviewOutcome(fanPubkey, reviewedEventId, outcome, previou
 }
 ```
 
-- [ ] **Step 4: Update verify.js getCurrentStatus to handle kind 31105**
+- [ ] **Step 4: Update verify.js getCurrentStatus to handle kind 31905**
 
 Add to the imports:
 
@@ -273,7 +275,7 @@ Remove the qr-proof exports (file no longer exists):
 // export { generateQRProof, verifyQRProof, isProofFresh } from './qr-proof.js';
 ```
 
-- [ ] **Step 6: Write tests for kind 31105**
+- [ ] **Step 6: Write tests for kind 31905**
 
 `tests/chain/types.test.js`:
 
@@ -282,8 +284,8 @@ import { describe, it, expect } from 'vitest';
 import { EVENT_KINDS, isValidReviewOutcome } from '../../server/chain/types.js';
 
 describe('types', () => {
-  it('includes REVIEW_OUTCOME kind 31105', () => {
-    expect(EVENT_KINDS.REVIEW_OUTCOME).toBe(31105);
+  it('includes REVIEW_OUTCOME kind 31905', () => {
+    expect(EVENT_KINDS.REVIEW_OUTCOME).toBe(31905);
   });
 
   it('validates review outcomes', () => {
@@ -356,7 +358,7 @@ Expected: all pass.
 
 ```bash
 git add -A
-git commit -m "feat: chain library with kind 31105 review outcome support"
+git commit -m "feat: chain library with kind 31905 review outcome support"
 ```
 
 ---
@@ -454,7 +456,7 @@ describe('RosterCache', () => {
 
   const clubPubkey = 'c'.repeat(64);
   const rosterEvent = {
-    id: 'r1', kind: 39001, pubkey: clubPubkey, created_at: 1000,
+    id: 'r1', kind: 31920, pubkey: clubPubkey, created_at: 1000,
     tags: [['d', 'staff-roster'], ['p', 'a'.repeat(64), 'gate_steward', 'Alice']],
     content: '', sig: 'x'.repeat(128),
   };
@@ -1119,7 +1121,7 @@ export async function connectAndSubscribe(relayUrl, caches, clubPubkeys) {
     return;
   }
 
-  // Subscribe to chain events (31100-31105) for all fans
+  // Subscribe to chain events (31900-31905) for all fans
   const chainKinds = Object.values(EVENT_KINDS);
   relay.subscribe(
     [{ kinds: chainKinds }],
@@ -1131,7 +1133,7 @@ export async function connectAndSubscribe(relayUrl, caches, clubPubkeys) {
     }
   );
 
-  // Subscribe to staff roster events (39001) from known clubs
+  // Subscribe to staff roster events (31920) from known clubs
   if (clubPubkeys.length > 0) {
     relay.subscribe(
       [{ kinds: [STAFF_ROSTER_KIND], authors: clubPubkeys }],
@@ -1791,7 +1793,7 @@ who scan, get green, and enjoy the match.
 ## Architecture — NO central fan database
 
 This server is a **stateless, in-memory-only verification gateway**. Fan data
-lives on the credential chain (Nostr events, kinds 31100-31105) and in the
+lives on the credential chain (Nostr events, kinds 31900-31905) and in the
 fan's Signet app. Nothing persists. Nothing to erase.
 
 - Chain tips: in-memory Map, rebuilt from relay on restart
@@ -1839,7 +1841,7 @@ git commit -m "docs: add CLAUDE.md, smoke test passes"
 | Task | What it builds | Files |
 |------|---------------|-------|
 | 1 | Project scaffolding + carry-over | package.json, validation.js, roster.js |
-| 2 | Chain library + kind 31105 | chain/types, events, verify, index + tests |
+| 2 | Chain library + kind 31905 | chain/types, events, verify, index + tests |
 | 3 | In-memory caches | chain-tip-cache, roster-cache, scan-tracker + tests |
 | 4 | Venue entry verification | venue-entry.js + tests |
 | 5 | NIP-98 auth (roster-backed) | auth.js + tests |

@@ -6,7 +6,7 @@ import { EVENT_KINDS, isValidPubkey, isValidCardType, isValidCategory, isValidSa
 import { isValidDateString } from '../validation.js';
 
 /**
- * Create a kind 31100 membership event (signed by the fan).
+ * Create a kind 31900 membership event (signed by the fan).
  */
 export function createMembership(fanPubkey, clubPubkey, signerSeckey) {
   if (!isValidPubkey(fanPubkey)) throw new Error('Invalid fan pubkey');
@@ -27,7 +27,7 @@ export function createMembership(fanPubkey, clubPubkey, signerSeckey) {
 }
 
 /**
- * Create a kind 31101 gate-lock event (signed by steward).
+ * Create a kind 31901 gate-lock event (signed by steward).
  */
 export function createGateLock(fanPubkey, clubPubkey, photoHash, previousEventId, signerSeckey) {
   if (!isValidPubkey(fanPubkey)) throw new Error('Invalid fan pubkey');
@@ -54,7 +54,7 @@ export function createGateLock(fanPubkey, clubPubkey, photoHash, previousEventId
 }
 
 /**
- * Create a kind 31102 attendance event (signed by steward).
+ * Create a kind 31902 attendance event (signed by steward).
  */
 export function createAttendance(fanPubkey, matchDate, result, previousEventId, signerSeckey) {
   if (!isValidPubkey(fanPubkey)) throw new Error('Invalid fan pubkey');
@@ -79,7 +79,7 @@ export function createAttendance(fanPubkey, matchDate, result, previousEventId, 
 }
 
 /**
- * Create a kind 31103 card event (signed by steward).
+ * Create a kind 31903 card event (signed by steward).
  */
 export function createCard(fanPubkey, cardType, category, previousEventId, signerSeckey) {
   if (!isValidPubkey(fanPubkey)) throw new Error('Invalid fan pubkey');
@@ -106,7 +106,7 @@ export function createCard(fanPubkey, cardType, category, previousEventId, signe
 }
 
 /**
- * Create a kind 31104 sanction event (signed by steward).
+ * Create a kind 31904 sanction event (signed by steward).
  */
 export function createSanction(fanPubkey, sanctionType, reason, startDate, endDate, previousEventId, signerSeckey) {
   if (!isValidPubkey(fanPubkey)) throw new Error('Invalid fan pubkey');
@@ -139,7 +139,7 @@ export function createSanction(fanPubkey, sanctionType, reason, startDate, endDa
 }
 
 /**
- * Create a kind 31105 review outcome event (signed by safety officer).
+ * Create a kind 31905 review outcome event (signed by safety officer).
  */
 export function createReviewOutcome(fanPubkey, reviewedEventId, outcome, previousEventId, signerSeckey) {
   if (!isValidPubkey(fanPubkey)) throw new Error('Invalid fan pubkey');

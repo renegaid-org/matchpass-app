@@ -94,7 +94,7 @@ After the code shift deploys, fans' chain tips and clubs' staff rosters at the o
 ## Out of scope for this plan
 
 - The original kind shifts themselves (already done; see `2026-04-16-matchpass-gate-design.md`)
-- Updates to `matchpass-prv` private spec docs (separate, owner action)
+- Updates to `matchpass-app-internal` private spec docs (separate, owner action)
 - Wider TROTT integration (this is a kind-numbering migration, not an architectural change)
 
 ## References

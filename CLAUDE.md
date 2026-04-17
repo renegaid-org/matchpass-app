@@ -3,13 +3,13 @@
 ## Repo boundaries
 
 This repo is **code only**. Do not put docs, specs, plans, ADRs, or GDPR
-papers here. Those live in matchpass-prv.
+papers here. Those live in matchpass-app-internal.
 
 | What | Where |
 |------|-------|
 | Application code + tests | **This repo** (`renegaid-org/matchpass-app`) |
-| Docs, specs, plans, ADRs, GDPR, deploy instructions | `matchpass-prv` (private) |
-| Private issues and feature tracking | `matchpass-app-internal` (issues only) |
+| Docs, specs, plans, ADRs, GDPR, deploy instructions | `matchpass-app-internal` (private) |
+| Private issues and feature tracking | `matchpass-app-internal` (private) |
 | Club directory site | `matchpass-club` (public) |
 
 ## Core purpose

@@ -5,6 +5,10 @@ import { isValidPubkey } from './chain/types.js';
 
 const MAX_ROSTER_STAFF = 200;
 
+/** Pre-2026-04-17 kind. Accepted by parser during transition window only. */
+const LEGACY_STAFF_ROSTER_KIND = 39001;
+const ACCEPTED_ROSTER_KINDS = new Set([STAFF_ROSTER_KIND, LEGACY_STAFF_ROSTER_KIND]);
+
 /** Roles that may appear in a staff roster. */
 export const VALID_STAFF_ROLES = [
   'gate_steward',
@@ -28,7 +32,7 @@ export const VALID_STAFF_ROLES = [
  * @throws {Error} If the event fails kind or d-tag validation.
  */
 export function parseRosterEvent(event) {
-  if (event.kind !== STAFF_ROSTER_KIND) {
+  if (!ACCEPTED_ROSTER_KINDS.has(event.kind)) {
     throw new Error('Invalid roster event kind');
   }
 

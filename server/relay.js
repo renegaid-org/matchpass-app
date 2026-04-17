@@ -2,6 +2,15 @@ import { Relay } from 'nostr-tools/relay';
 import { verifyEvent } from 'nostr-tools/pure';
 import { EVENT_KINDS, STAFF_ROSTER_KIND } from './chain/types.js';
 
+// Pre-2026-04-17 kinds — read during transition window so existing events on
+// the relay remain visible. New events are written at canonical kinds only.
+// Remove this bridge once the transition window has elapsed (recommended 90 days).
+// See docs/superpowers/specs/2026-04-17-kind-migration-plan.md.
+const LEGACY_CHAIN_KINDS = [31100, 31101, 31102, 31103, 31104, 31105];
+const LEGACY_STAFF_ROSTER_KIND = 39001;
+const ALL_CHAIN_KINDS = [...Object.values(EVENT_KINDS), ...LEGACY_CHAIN_KINDS];
+const ALL_ROSTER_KINDS = [STAFF_ROSTER_KIND, LEGACY_STAFF_ROSTER_KIND];
+
 let relay = null;
 let reconnectAttempts = 0;
 let reconnectTimer = null;
@@ -47,22 +56,29 @@ export async function connectAndSubscribe(relayUrl, caches, clubPubkeys) {
     reconnect(_relayUrl);
   };
 
-  // 1. Fetch existing roster events first (needed for signer context)
+  // 1. Fetch existing roster events first (needed for signer context).
+  // Read both canonical and legacy roster kinds during the transition window.
   if (clubPubkeys.length > 0) {
-    const rosterEvents = await collectEvents(relay, [{ kinds: [STAFF_ROSTER_KIND], authors: clubPubkeys }]);
+    const rosterEvents = await collectEvents(relay, [{ kinds: ALL_ROSTER_KINDS, authors: clubPubkeys }]);
+    // Keep newest per club across both kinds
+    const newestByClub = new Map();
     for (const event of rosterEvents) {
-      if (verifyEvent(event)) {
-        try { rosterCache.set(event.pubkey, event); } catch (err) {
-          console.error('Relay: malformed roster event, skipping:', err.message);
-        }
+      if (!verifyEvent(event)) continue;
+      const existing = newestByClub.get(event.pubkey);
+      if (!existing || event.created_at > existing.created_at) {
+        newestByClub.set(event.pubkey, event);
       }
     }
-    console.log(`Relay: fetched ${rosterEvents.length} roster event(s)`);
+    for (const event of newestByClub.values()) {
+      try { rosterCache.set(event.pubkey, event); } catch (err) {
+        console.error('Relay: malformed roster event, skipping:', err.message);
+      }
+    }
+    console.log(`Relay: fetched ${rosterEvents.length} roster event(s) across ${newestByClub.size} club(s)`);
   }
 
-  // 2. Fetch existing chain events
-  const chainKinds = Object.values(EVENT_KINDS);
-  const chainEvents = await collectEvents(relay, [{ kinds: chainKinds }]);
+  // 2. Fetch existing chain events (canonical + legacy kinds during transition).
+  const chainEvents = await collectEvents(relay, [{ kinds: ALL_CHAIN_KINDS }]);
   for (const event of chainEvents) {
     if (verifyEvent(event)) handleChainEvent(event, chainTipCache, rosterCache);
   }
@@ -77,9 +93,9 @@ export async function connectAndSubscribe(relayUrl, caches, clubPubkeys) {
  */
 function subscribeToChainEvents(r, caches) {
   const { chainTipCache, rosterCache } = caches;
-  const chainKinds = Object.values(EVENT_KINDS);
+  // Subscribe to both canonical and legacy kinds during transition window.
   r.subscribe(
-    [{ kinds: chainKinds }],
+    [{ kinds: ALL_CHAIN_KINDS }],
     {
       onevent: (event) => {
         if (!verifyEvent(event)) return;
@@ -94,14 +110,17 @@ function subscribeToChainEvents(r, caches) {
  */
 function subscribeToRosterEvents(r, rosterCache, clubPubkeys) {
   if (clubPubkeys.length === 0) return;
+  // Subscribe to both canonical and legacy roster kinds during transition.
   r.subscribe(
-    [{ kinds: [STAFF_ROSTER_KIND], authors: clubPubkeys }],
+    [{ kinds: ALL_ROSTER_KINDS, authors: clubPubkeys }],
     {
       onevent: (event) => {
         if (!verifyEvent(event)) return;
         try {
+          // RosterCache.set keeps the newest by created_at, so legacy events
+          // older than canonical are naturally superseded.
           rosterCache.set(event.pubkey, event);
-          console.log(`Relay: roster update from ${event.pubkey.slice(0, 12)}`);
+          console.log(`Relay: roster update from ${event.pubkey.slice(0, 12)} (kind ${event.kind})`);
         } catch (err) {
           console.error('Relay: malformed roster event, skipping:', err.message);
         }

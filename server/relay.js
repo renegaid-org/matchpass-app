@@ -1,6 +1,6 @@
 import { Relay } from 'nostr-tools/relay';
 import { verifyEvent } from 'nostr-tools/pure';
-import { EVENT_KINDS, STAFF_ROSTER_KIND } from './chain/types.js';
+import { EVENT_KINDS, REVIEW_REQUEST_KIND, STAFF_ROSTER_KIND } from './chain/types.js';
 
 // Pre-2026-04-17 kinds — read during transition window so existing events on
 // the relay remain visible. New events are written at canonical kinds only.
@@ -18,6 +18,24 @@ let _caches = null;
 let _clubPubkeys = [];
 let _relayUrl = null;
 
+// Listeners notified when a chain / review-request event arrives on the
+// live subscription. Used by the SSE endpoint to fan events out to
+// connected stewards.
+const _eventListeners = new Set();
+
+export function subscribeToLiveEvents(listener) {
+  _eventListeners.add(listener);
+  return () => _eventListeners.delete(listener);
+}
+
+function notifyListeners(event) {
+  for (const listener of _eventListeners) {
+    try { listener(event); } catch (err) {
+      console.error('Live-event listener threw:', err.message);
+    }
+  }
+}
+
 function shutdown() {
   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
   if (relay) { relay.close(); relay = null; }
@@ -34,7 +52,7 @@ process.on('SIGINT', shutdown);
  * @param {string[]} clubPubkeys - pubkeys of verified clubs
  */
 export async function connectAndSubscribe(relayUrl, caches, clubPubkeys) {
-  const { chainTipCache, rosterCache } = caches;
+  const { chainTipCache, rosterCache, reviewRequestCache } = caches;
 
   // Store for reconnection
   _relayUrl = relayUrl;
@@ -86,6 +104,9 @@ export async function connectAndSubscribe(relayUrl, caches, clubPubkeys) {
 
   subscribeToChainEvents(relay, caches);
   subscribeToRosterEvents(relay, rosterCache, clubPubkeys);
+  if (reviewRequestCache) {
+    subscribeToReviewRequests(relay, reviewRequestCache, clubPubkeys);
+  }
 }
 
 /**
@@ -100,6 +121,27 @@ function subscribeToChainEvents(r, caches) {
       onevent: (event) => {
         if (!verifyEvent(event)) return;
         handleChainEvent(event, chainTipCache, rosterCache);
+        notifyListeners(event);
+      },
+    }
+  );
+}
+
+/**
+ * Subscribe to kind 31910 review request events, filtered to those whose
+ * `club` tag matches one of our known clubs. Populates the review
+ * request cache and fans out to SSE listeners.
+ */
+function subscribeToReviewRequests(r, reviewRequestCache, clubPubkeys) {
+  const clubSet = new Set(clubPubkeys);
+  r.subscribe(
+    [{ kinds: [REVIEW_REQUEST_KIND] }],
+    {
+      onevent: (event) => {
+        if (!verifyEvent(event)) return;
+        const club = event.tags?.find(t => Array.isArray(t) && t[0] === 'club')?.[1];
+        if (club && !clubSet.has(club)) return;
+        if (reviewRequestCache.set(event)) notifyListeners(event);
       },
     }
   );
@@ -239,6 +281,21 @@ function handleChainEvent(event, chainTipCache, rosterCache) {
 export async function publishEvent(event) {
   if (!relay) throw new Error('Relay not connected');
   await relay.publish(event);
+}
+
+/**
+ * Fetch all chain events for a fan pubkey from the relay and return
+ * them sorted in chain order (oldest first).
+ *
+ * Filters out signature-invalid events. Does NOT verify chain linkage
+ * (use verifyChain for that) — callers get a raw (verified-signature)
+ * set of events.
+ */
+export async function fetchFanChain(fanPubkey, { timeoutMs = 15000 } = {}) {
+  if (!relay) throw new Error('Relay not connected');
+  const events = await collectEvents(relay, [{ kinds: ALL_CHAIN_KINDS, '#p': [fanPubkey] }], timeoutMs);
+  const verified = events.filter(e => verifyEvent(e));
+  return verified.sort((a, b) => a.created_at - b.created_at);
 }
 
 /**

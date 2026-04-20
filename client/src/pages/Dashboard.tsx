@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { useFlags } from '../hooks/useFlags';
+import { useFlags, getReviewFanPubkey } from '../hooks/useFlags';
+import type { ReviewRequest } from '../hooks/useFlags';
 import type { Nip98Signer } from '../lib/nip98';
 
 type Tab = 'today' | 'reviews' | 'stewards' | 'history';
@@ -7,9 +8,11 @@ type Tab = 'today' | 'reviews' | 'stewards' | 'history';
 interface Props {
   signer: Nip98Signer;
   onIssueCardForFlag: (fanPubkey: string) => void;
+  onOpenReview?: (request: ReviewRequest) => void;
+  onIssueSanction?: (fanPubkey: string) => void;
 }
 
-export function Dashboard({ signer, onIssueCardForFlag }: Props) {
+export function Dashboard({ signer, onIssueCardForFlag, onOpenReview, onIssueSanction }: Props) {
   const [tab, setTab] = useState<Tab>('today');
   const flags = useFlags(signer);
 
@@ -98,6 +101,14 @@ export function Dashboard({ signer, onIssueCardForFlag }: Props) {
                 >
                   Convert to card
                 </button>
+                {onIssueSanction && (
+                  <button
+                    className="btn btn-warning btn-sm"
+                    onClick={() => onIssueSanction(f.fanPubkey)}
+                  >
+                    Issue sanction
+                  </button>
+                )}
               </div>
             </div>
           ))}
@@ -105,11 +116,38 @@ export function Dashboard({ signer, onIssueCardForFlag }: Props) {
       )}
 
       {tab === 'reviews' && (
-        <div className="card">
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-            Review-request surface lands in Sprint B Task B3. Subscribe to kind 31910 events
-            and list them here.
-          </p>
+        <div>
+          <div className="section-title">Review requests</div>
+          {flags.loading && <p style={{ color: 'var(--text-muted)' }}>Loading…</p>}
+          {!flags.loading && flags.reviewRequests.length === 0 && (
+            <div className="card">
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+                No pending review requests.
+              </p>
+            </div>
+          )}
+          {flags.reviewRequests.map(req => {
+            const fan = getReviewFanPubkey(req);
+            return (
+              <div className="card" key={req.id} style={{ marginBottom: 8 }}>
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                  Fan <code>{fan ? `${fan.slice(0, 12)}…` : 'unknown'}</code>
+                </div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 4 }}>
+                  Requested {new Date(req.created_at * 1000).toLocaleString()}
+                </div>
+                <div style={{ marginTop: 12 }}>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={() => onOpenReview?.(req)}
+                    disabled={!onOpenReview}
+                  >
+                    Open review
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 

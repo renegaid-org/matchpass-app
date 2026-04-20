@@ -5,11 +5,15 @@ import { Scan } from './pages/Scan';
 import { Result } from './pages/Result';
 import { Dashboard } from './pages/Dashboard';
 import { CardIssue } from './pages/CardIssue';
+import { ReviewDetail } from './pages/ReviewDetail';
+import { SanctionIssue } from './pages/SanctionIssue';
+import { Roster } from './pages/Roster';
 import { useAuth } from './hooks/useAuth';
 import { getTodayStats } from './lib/db';
 import type { ScanResult as ScanResultType, NostrEvent } from './types';
+import type { ReviewRequest } from './hooks/useFlags';
 
-type Page = 'home' | 'pair' | 'scan' | 'result' | 'dashboard' | 'card';
+type Page = 'home' | 'pair' | 'scan' | 'result' | 'dashboard' | 'card' | 'review' | 'sanction' | 'roster';
 
 const GATE_STORAGE_KEY = 'matchpass.gateId';
 
@@ -19,6 +23,8 @@ export function App() {
   const [gateId, setGateId] = useState<string>(() => localStorage.getItem(GATE_STORAGE_KEY) || '');
   const [lastResult, setLastResult] = useState<ScanResultType | null>(null);
   const [cardTarget, setCardTarget] = useState<string | null>(null);
+  const [sanctionTarget, setSanctionTarget] = useState<string | null>(null);
+  const [reviewTarget, setReviewTarget] = useState<ReviewRequest | null>(null);
   const [todayStats, setTodayStats] = useState({ green: 0, amber: 0, red: 0 });
 
   useEffect(() => {
@@ -92,6 +98,14 @@ export function App() {
             setCardTarget(fanPubkey);
             setPage('card');
           }}
+          onOpenReview={(request) => {
+            setReviewTarget(request);
+            setPage('review');
+          }}
+          onIssueSanction={(fanPubkey) => {
+            setSanctionTarget(fanPubkey);
+            setPage('sanction');
+          }}
         />
       </Layout>
     );
@@ -101,6 +115,47 @@ export function App() {
     return (
       <Layout title="Issue card" showBack onBack={() => setPage('dashboard')} accent="warning">
         <CardIssue signer={signer} fanPubkey={cardTarget} onDone={() => setPage('dashboard')} />
+      </Layout>
+    );
+  }
+
+  if (page === 'roster' && signer && remotePubkey) {
+    return (
+      <Layout title="Roster" showBack onBack={() => setPage('home')} accent="officer">
+        <Roster signer={signer} adminPubkey={remotePubkey} onBack={() => setPage('home')} />
+      </Layout>
+    );
+  }
+
+  if (page === 'sanction' && signer && sanctionTarget) {
+    return (
+      <Layout title="Issue sanction" showBack onBack={() => setPage('dashboard')} accent="warning">
+        <SanctionIssue
+          signer={signer}
+          fanPubkey={sanctionTarget}
+          onBack={() => setPage('dashboard')}
+          onDone={() => {
+            setSanctionTarget(null);
+            setPage('dashboard');
+          }}
+        />
+      </Layout>
+    );
+  }
+
+  if (page === 'review' && signer && remotePubkey && reviewTarget) {
+    return (
+      <Layout title="Review" showBack onBack={() => setPage('dashboard')} accent="officer">
+        <ReviewDetail
+          signer={signer}
+          officerPubkey={remotePubkey}
+          request={reviewTarget}
+          onBack={() => setPage('dashboard')}
+          onResolved={() => {
+            setReviewTarget(null);
+            setPage('dashboard');
+          }}
+        />
       </Layout>
     );
   }
@@ -118,6 +173,7 @@ export function App() {
         stats={todayStats}
         onScan={() => setPage('scan')}
         onDashboard={() => setPage('dashboard')}
+        onRoster={() => setPage('roster')}
       />
     </Layout>
   );
@@ -128,11 +184,13 @@ function Home({
   stats,
   onScan,
   onDashboard,
+  onRoster,
 }: {
   remotePubkey: string;
   stats: { green: number; amber: number; red: number };
   onScan: () => void;
   onDashboard: () => void;
+  onRoster: () => void;
 }) {
   const total = stats.green + stats.amber + stats.red;
   return (
@@ -150,8 +208,12 @@ function Home({
         Scan
       </button>
 
-      <button className="btn btn-secondary btn-lg" onClick={onDashboard} style={{ marginBottom: 24 }}>
+      <button className="btn btn-secondary btn-lg" onClick={onDashboard} style={{ marginBottom: 12 }}>
         Officer dashboard
+      </button>
+
+      <button className="btn btn-ghost btn-sm" onClick={onRoster} style={{ marginBottom: 24 }}>
+        Admin: edit roster
       </button>
 
       <div className="section">

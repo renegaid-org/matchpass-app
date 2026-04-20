@@ -7,8 +7,16 @@ import { dirname, join } from 'path';
 import { ChainTipCache } from './chain-tip-cache.js';
 import { RosterCache } from './roster-cache.js';
 import { ScanTracker } from './scan-tracker.js';
+import { ReviewRequestCache } from './review-request-cache.js';
 import { ClubDiscovery } from './club-discovery.js';
-import { connectAndSubscribe, getRelayStatus, resubscribeRoster } from './relay.js';
+import {
+  connectAndSubscribe,
+  getRelayStatus,
+  resubscribeRoster,
+  fetchFanChain,
+  subscribeToLiveEvents,
+  publishEvent,
+} from './relay.js';
 import { verifyNip98, requireRole } from './auth.js';
 
 import createScanRouter from './routes/scan.js';
@@ -16,6 +24,9 @@ import createEventRouter from './routes/event.js';
 import createTipRouter from './routes/tip.js';
 import createDashboardRouter from './routes/dashboard.js';
 import createFlagsRouter from './routes/flags.js';
+import createChainRouter from './routes/chain.js';
+import createSubscribeRouter from './routes/subscribe.js';
+import createRosterRouter from './routes/roster.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -23,7 +34,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const chainTipCache = new ChainTipCache();
 const rosterCache = new RosterCache();
 const scanTracker = new ScanTracker();
-const caches = { chainTipCache, rosterCache, scanTracker };
+const reviewRequestCache = new ReviewRequestCache();
+const caches = { chainTipCache, rosterCache, scanTracker, reviewRequestCache };
 
 const app = express();
 
@@ -64,8 +76,11 @@ const auth = verifyNip98(rosterCache);
 app.use('/api/gate/scan', auth, createScanRouter(caches));
 app.use('/api/gate/event', auth, createEventRouter(caches));
 app.use('/api/gate/tip', auth, createTipRouter(caches));
+app.use('/api/gate/chain', auth, createChainRouter({ fetchFanChain }));
 app.use('/api/gate/dashboard', auth, requireRole('safety_officer', 'admin'), createDashboardRouter(caches));
 app.use('/api/gate/flags', auth, requireRole('safety_officer', 'safeguarding_officer', 'admin'), createFlagsRouter(caches));
+app.use('/api/gate/subscribe', auth, createSubscribeRouter({ subscribeToLiveEvents }));
+app.use('/api/gate/roster', auth, requireRole('admin'), createRosterRouter({ rosterCache, publishEvent }));
 
 // Error handler
 app.use((err, req, res, next) => {

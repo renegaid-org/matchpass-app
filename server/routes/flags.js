@@ -1,11 +1,20 @@
 import { Router } from 'express';
 
-export default function createFlagsRouter({ scanTracker }) {
+export default function createFlagsRouter({ scanTracker, reviewRequestCache }) {
   const router = Router();
 
   router.get('/', (req, res) => {
     const flags = scanTracker.listOpenFlags();
-    return res.json({ flags });
+    const clubPubkey = req.staff?.clubPubkey || null;
+    const reviewRequests = reviewRequestCache
+      ? reviewRequestCache.list(clubPubkey ? { clubPubkey } : {}).map(e => ({
+          id: e.id,
+          pubkey: e.pubkey,
+          created_at: e.created_at,
+          tags: e.tags,
+        }))
+      : [];
+    return res.json({ flags, reviewRequests });
   });
 
   router.post('/:id/dismiss', (req, res) => {

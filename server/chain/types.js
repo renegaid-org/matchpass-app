@@ -9,6 +9,7 @@ export const EVENT_KINDS = {
   REVIEW_OUTCOME: 31905,
 };
 
+export const REVIEW_REQUEST_KIND = 31910;
 export const STAFF_ROSTER_KIND = 31920;
 
 export const CARD_CATEGORIES = [

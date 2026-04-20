@@ -124,3 +124,19 @@ export async function getTodayStats(steward: string): Promise<StewardStatsRecord
   const record = (await d.get('stewardStats', [date, steward])) as StewardStatsRecord | undefined;
   return record ?? { date, steward, green: 0, amber: 0, red: 0, photoEscalations: 0, flags: 0 };
 }
+
+export async function addUnlinkedIncident(rec: UnlinkedIncidentRecord): Promise<void> {
+  const d = await db();
+  await d.put('unlinkedIncidents', rec);
+}
+
+export async function listUnlinkedIncidents(): Promise<UnlinkedIncidentRecord[]> {
+  const d = await db();
+  const all = (await d.getAll('unlinkedIncidents')) as UnlinkedIncidentRecord[];
+  return all.sort((a, b) => b.time - a.time);
+}
+
+export async function deleteUnlinkedIncident(id: string): Promise<void> {
+  const d = await db();
+  await d.delete('unlinkedIncidents', id);
+}

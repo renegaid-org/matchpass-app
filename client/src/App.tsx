@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Layout } from './components/Layout';
+import { OfflineBanner } from './components/OfflineBanner';
+import { useOfflineQueue } from './hooks/useOfflineQueue';
 import { Pair } from './pages/Pair';
 import { Scan } from './pages/Scan';
 import { Result } from './pages/Result';
@@ -8,17 +10,19 @@ import { CardIssue } from './pages/CardIssue';
 import { ReviewDetail } from './pages/ReviewDetail';
 import { SanctionIssue } from './pages/SanctionIssue';
 import { Roster } from './pages/Roster';
+import { UnlinkedIncident } from './pages/UnlinkedIncident';
 import { useAuth } from './hooks/useAuth';
 import { getTodayStats } from './lib/db';
 import type { ScanResult as ScanResultType, NostrEvent } from './types';
 import type { ReviewRequest } from './hooks/useFlags';
 
-type Page = 'home' | 'pair' | 'scan' | 'result' | 'dashboard' | 'card' | 'review' | 'sanction' | 'roster';
+type Page = 'home' | 'pair' | 'scan' | 'result' | 'dashboard' | 'card' | 'review' | 'sanction' | 'roster' | 'incident';
 
 const GATE_STORAGE_KEY = 'matchpass.gateId';
 
 export function App() {
   const { ready, status, signer, remotePubkey, startPairing, unpair } = useAuth();
+  const offline = useOfflineQueue(signer);
   const [page, setPage] = useState<Page>('home');
   const [gateId, setGateId] = useState<string>(() => localStorage.getItem(GATE_STORAGE_KEY) || '');
   const [lastResult, setLastResult] = useState<ScanResultType | null>(null);
@@ -42,6 +46,15 @@ export function App() {
       </Layout>
     );
   }
+
+  const banner = (
+    <OfflineBanner
+      online={offline.online}
+      queueSize={offline.queueSize}
+      flushing={offline.flushing}
+      onRetry={() => { offline.flush().catch(() => {}); }}
+    />
+  );
 
   if (status.kind !== 'connected' || page === 'pair') {
     return (
@@ -119,6 +132,14 @@ export function App() {
     );
   }
 
+  if (page === 'incident') {
+    return (
+      <Layout title="Incident note" showBack onBack={() => setPage('home')}>
+        <UnlinkedIncident onBack={() => setPage('home')} />
+      </Layout>
+    );
+  }
+
   if (page === 'roster' && signer && remotePubkey) {
     return (
       <Layout title="Roster" showBack onBack={() => setPage('home')} accent="officer">
@@ -161,21 +182,25 @@ export function App() {
   }
 
   return (
-    <Layout
-      title="MatchPass"
-      roleBadge="Steward"
-      onSettingsOpen={async () => {
-        if (confirm('Unpair from Signet?')) await unpair();
-      }}
-    >
-      <Home
-        remotePubkey={remotePubkey || ''}
-        stats={todayStats}
-        onScan={() => setPage('scan')}
-        onDashboard={() => setPage('dashboard')}
-        onRoster={() => setPage('roster')}
-      />
-    </Layout>
+    <>
+      {banner}
+      <Layout
+        title="MatchPass"
+        roleBadge="Steward"
+        onSettingsOpen={async () => {
+          if (confirm('Unpair from Signet?')) await unpair();
+        }}
+      >
+        <Home
+          remotePubkey={remotePubkey || ''}
+          stats={todayStats}
+          onScan={() => setPage('scan')}
+          onDashboard={() => setPage('dashboard')}
+          onRoster={() => setPage('roster')}
+          onIncident={() => setPage('incident')}
+        />
+      </Layout>
+    </>
   );
 }
 
@@ -185,12 +210,14 @@ function Home({
   onScan,
   onDashboard,
   onRoster,
+  onIncident,
 }: {
   remotePubkey: string;
   stats: { green: number; amber: number; red: number };
   onScan: () => void;
   onDashboard: () => void;
   onRoster: () => void;
+  onIncident: () => void;
 }) {
   const total = stats.green + stats.amber + stats.red;
   return (
@@ -210,6 +237,10 @@ function Home({
 
       <button className="btn btn-secondary btn-lg" onClick={onDashboard} style={{ marginBottom: 12 }}>
         Officer dashboard
+      </button>
+
+      <button className="btn btn-ghost btn-sm" onClick={onIncident} style={{ marginBottom: 8 }}>
+        Note an incident (this device)
       </button>
 
       <button className="btn btn-ghost btn-sm" onClick={onRoster} style={{ marginBottom: 24 }}>

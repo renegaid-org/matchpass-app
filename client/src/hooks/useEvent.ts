@@ -12,6 +12,7 @@
 
 import { useCallback } from 'react';
 import { buildNip98AuthHeader, type Nip98Signer } from '../lib/nip98';
+import { db, type PendingEventRecord } from '../lib/db';
 import type { EventTemplate, NostrEvent } from '../types';
 
 const API_BASE = '/api/gate';
@@ -29,6 +30,7 @@ export interface PublishResult {
   event: NostrEvent;
   status: number;
   body: { ok?: boolean; eventId?: string; error?: string };
+  queued?: boolean;
 }
 
 async function fetchTip(pubkey: string, signer: Nip98Signer): Promise<string | null> {
@@ -60,14 +62,25 @@ export function useEvent(signer: Nip98Signer | null) {
       const fullUrl = `${window.location.origin}${API_BASE}/event`;
       const body = { event: signed };
       const authHeader = await buildNip98AuthHeader('POST', fullUrl, body, signer);
-      const res = await fetch(`${API_BASE}/event`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: authHeader,
-        },
-        body: JSON.stringify(body),
-      });
+      let res: Response;
+      try {
+        res = await fetch(`${API_BASE}/event`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: authHeader,
+          },
+          body: JSON.stringify(body),
+        });
+      } catch (err) {
+        // Network failure — queue the signed event for later flush.
+        // NB: we only queue events that don't depend on a chain-tip we
+        // haven't confirmed; caller controls this via fanPubkey.
+        const d = await db();
+        const rec: PendingEventRecord = { id: signed.id, event: signed, queuedAt: Date.now() };
+        await d.put('pendingEvents', rec);
+        return { event: signed, status: 0, body: { error: (err as Error).message }, queued: true };
+      }
       const resBody = await res.json() as { ok?: boolean; eventId?: string; error?: string; currentTip?: string };
 
       if (res.ok) {

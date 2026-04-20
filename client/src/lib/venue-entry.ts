@@ -83,11 +83,39 @@ export function verifyVenueEntry(event: NostrEvent): VenueEntry {
     throw new VenueEntryError('Invalid signature', 'qr_invalid_signature');
   }
 
+  // Validate optional fields before handing them to the caller: photoKey feeds
+  // into hexToBytes/AES-GCM and blossom feeds into fetch(). A malicious QR
+  // could otherwise set photo_key to a very long string and waste decode time,
+  // or set blossom to javascript:// / file:// / http://internal/...
+  const rawX = getTag(event, 'x');
+  const rawBlossom = getTag(event, 'blossom');
+  const rawPhotoKey = getTag(event, 'photo_key');
+  const HEX64_RE = /^[0-9a-f]{64}$/i;
+  if (rawX !== undefined && !HEX64_RE.test(rawX)) {
+    throw new VenueEntryError('Malformed x tag', 'qr_invalid_signature');
+  }
+  if (rawPhotoKey !== undefined && !HEX64_RE.test(rawPhotoKey)) {
+    throw new VenueEntryError('Malformed photo_key tag', 'qr_invalid_signature');
+  }
+  if (rawBlossom !== undefined) {
+    if (typeof rawBlossom !== 'string' || rawBlossom.length > 512) {
+      throw new VenueEntryError('Malformed blossom tag', 'qr_invalid_signature');
+    }
+    try {
+      const u = new URL(rawBlossom);
+      if (u.protocol !== 'https:') {
+        throw new VenueEntryError('Blossom URL must be https', 'qr_invalid_signature');
+      }
+    } catch {
+      throw new VenueEntryError('Malformed blossom tag', 'qr_invalid_signature');
+    }
+  }
+
   return {
     pubkey: event.pubkey,
-    x: getTag(event, 'x'),
-    blossom: getTag(event, 'blossom'),
-    photoKey: getTag(event, 'photo_key'),
+    x: rawX,
+    blossom: rawBlossom,
+    photoKey: rawPhotoKey,
     eventId: event.id,
     createdAt: event.created_at,
   };

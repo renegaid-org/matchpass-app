@@ -192,9 +192,17 @@ export function verifySignerAuthority(event, staffRosterEvent) {
 // the author of the event being reviewed (for self-review prohibition).
 // If unset, the self-review check is skipped at the chain-library layer
 // and enforced only at the PWA layer.
+//
+// SECURITY NOTE: the PWA enforcement is bypassable by any rostered officer
+// who crafts a REVIEW_OUTCOME directly via /api/gate/event. Operators SHOULD
+// wire setEventAuthorLookup(fn) at server boot to close the self-review
+// loophole server-side. See audit report.
 let _lookupEventAuthor = null;
 export function setEventAuthorLookup(fn) {
   _lookupEventAuthor = fn;
+}
+export function hasEventAuthorLookup() {
+  return _lookupEventAuthor !== null;
 }
 
 /**

@@ -18,6 +18,7 @@ import {
   publishEvent,
 } from './relay.js';
 import { verifyNip98, requireRole } from './auth.js';
+import { hasEventAuthorLookup } from './chain/verify.js';
 
 import createScanRouter from './routes/scan.js';
 import createEventRouter from './routes/event.js';
@@ -71,9 +72,10 @@ app.use('/api/gate/event', rateLimit({ windowMs: 60_000, max: 30 }));
 // Static files (steward PWA)
 app.use(express.static(join(__dirname, '..', 'public')));
 
-// Health/status (unauthenticated)
+// Health/status (unauthenticated). Minimal body to avoid leaking relay
+// endpoint reachability / deployment detail to unauthenticated scanners.
 app.get('/api/gate/status', (req, res) => {
-  res.json({ ok: true, relay: getRelayStatus() });
+  res.json({ ok: true });
 });
 
 // Auth middleware
@@ -117,6 +119,12 @@ async function start() {
   await connectAndSubscribe(RELAY_URL, { chainTipCache, rosterCache }, clubPubkeys);
 
   scheduleMidnightClear(scanTracker);
+
+  if (!hasEventAuthorLookup()) {
+    console.warn('WARNING: self-review prohibition is not enforced server-side. '
+      + 'Install an event-author lookup via setEventAuthorLookup(fn) to close '
+      + 'the loophole where an officer signs a REVIEW_OUTCOME for their own event.');
+  }
 
   app.listen(PORT, () => {
     console.log(`matchpass-gate listening on ${PORT}`);

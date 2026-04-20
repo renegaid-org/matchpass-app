@@ -112,7 +112,7 @@ export async function connectAndSubscribe(relayUrl, caches, clubPubkeys) {
   subscribeToChainEvents(relay, caches);
   subscribeToRosterEvents(relay, rosterCache, clubPubkeys);
   if (reviewRequestCache) {
-    subscribeToReviewRequests(relay, reviewRequestCache, clubPubkeys);
+    subscribeToReviewRequests(relay, reviewRequestCache, clubPubkeys, rosterCache);
   }
 }
 
@@ -139,7 +139,7 @@ function subscribeToChainEvents(r, caches) {
  * `club` tag matches one of our known clubs. Populates the review
  * request cache and fans out to SSE listeners.
  */
-function subscribeToReviewRequests(r, reviewRequestCache, clubPubkeys) {
+function subscribeToReviewRequests(r, reviewRequestCache, clubPubkeys, rosterCache) {
   const clubSet = new Set(clubPubkeys);
   r.subscribe(
     [{ kinds: [REVIEW_REQUEST_KIND] }],
@@ -147,7 +147,13 @@ function subscribeToReviewRequests(r, reviewRequestCache, clubPubkeys) {
       onevent: (event) => {
         if (!verifyEvent(event)) return;
         const club = event.tags?.find(t => Array.isArray(t) && t[0] === 'club')?.[1];
-        if (club && !clubSet.has(club)) return;
+        if (!club || !clubSet.has(club)) return;
+        // Author must be rostered staff for the referenced club. Without this
+        // check any pubkey on the relay could flood the officer review queue.
+        if (rosterCache) {
+          const staff = rosterCache.findStaff(event.pubkey);
+          if (!staff || staff.clubPubkey !== club) return;
+        }
         if (reviewRequestCache.set(event)) notifyListeners(event);
       },
     }

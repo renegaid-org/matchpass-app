@@ -6,18 +6,36 @@ import { publishEvent } from '../relay.js';
 
 const ALLOWED_KINDS = new Set(Object.values(EVENT_KINDS));
 
-// Per-fan lock — prevents concurrent submissions racing on the same chain tip
+// Per-fan lock — prevents concurrent submissions racing on the same chain tip.
+// A hung publishEvent (slow relay) previously pinned the lock indefinitely,
+// blocking every subsequent event for that fan. Now bounded by FAN_LOCK_TIMEOUT_MS
+// plus a map-size cap that drops the oldest lock once full.
+const FAN_LOCK_TIMEOUT_MS = 30_000;
+const MAX_FAN_LOCKS = 10_000;
 const fanLocks = new Map(); // fanPubkey -> Promise
 
 async function withFanLock(fanPubkey, fn) {
   while (fanLocks.has(fanPubkey)) {
-    await fanLocks.get(fanPubkey);
+    try {
+      await fanLocks.get(fanPubkey);
+    } catch {
+      // The prior holder rejected — proceed with our own lock.
+    }
   }
-  const promise = fn();
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error('fan_lock_timeout')), FAN_LOCK_TIMEOUT_MS);
+  });
+  const promise = Promise.race([fn(), timeout]);
   fanLocks.set(fanPubkey, promise);
+  if (fanLocks.size > MAX_FAN_LOCKS) {
+    const oldest = fanLocks.keys().next().value;
+    if (oldest !== fanPubkey) fanLocks.delete(oldest);
+  }
   try {
     return await promise;
   } finally {
+    clearTimeout(timer);
     fanLocks.delete(fanPubkey);
   }
 }

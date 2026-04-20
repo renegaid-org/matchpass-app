@@ -1,4 +1,11 @@
 import { Router } from 'express';
+import { REVIEW_REQUEST_KIND } from '../chain/types.js';
+
+// Per-pubkey open-connection cap. SSE streams are long-lived and bypass the
+// request-rate limiter once the initial GET is through, so an authenticated
+// client can otherwise open unbounded streams and exhaust server FDs / memory.
+const MAX_CONNECTIONS_PER_PUBKEY = 3;
+const openConnections = new Map(); // pubkey -> count
 
 /**
  * GET /api/gate/subscribe
@@ -9,12 +16,22 @@ import { Router } from 'express';
  * polling.
  *
  * Auth is handled by the mounting middleware (NIP-98). The steward's
- * pubkey is available at req.staff.pubkey.
+ * pubkey is available at req.staff.pubkey and their club at req.staff.clubPubkey.
+ * Review-request events are filtered to the steward's own club to avoid
+ * cross-club officer-workload leakage.
  */
 export default function createSubscribeRouter({ subscribeToLiveEvents }) {
   const router = Router();
 
   router.get('/', (req, res) => {
+    const pubkey = req.staff?.pubkey;
+    const clubPubkey = req.staff?.clubPubkey;
+    const openCount = openConnections.get(pubkey) || 0;
+    if (openCount >= MAX_CONNECTIONS_PER_PUBKEY) {
+      return res.status(429).json({ error: 'Too many open subscriptions' });
+    }
+    openConnections.set(pubkey, openCount + 1);
+
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
@@ -25,6 +42,12 @@ export default function createSubscribeRouter({ subscribeToLiveEvents }) {
     res.write(': connected\n\n');
 
     const send = (event) => {
+      // Review requests are scoped to a single club — filter out any whose
+      // `club` tag does not match the subscribed steward's club.
+      if (event.kind === REVIEW_REQUEST_KIND) {
+        const eventClub = event.tags?.find(t => Array.isArray(t) && t[0] === 'club')?.[1];
+        if (clubPubkey && eventClub && eventClub !== clubPubkey) return;
+      }
       const payload = {
         id: event.id,
         kind: event.kind,
@@ -47,6 +70,9 @@ export default function createSubscribeRouter({ subscribeToLiveEvents }) {
     req.on('close', () => {
       clearInterval(heartbeat);
       unsubscribe();
+      const remaining = (openConnections.get(pubkey) || 1) - 1;
+      if (remaining <= 0) openConnections.delete(pubkey);
+      else openConnections.set(pubkey, remaining);
       res.end();
     });
   });

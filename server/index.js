@@ -39,6 +39,13 @@ const caches = { chainTipCache, rosterCache, scanTracker, reviewRequestCache };
 
 const app = express();
 
+// Trust one proxy hop — required for req.ip to reflect the real client when
+// this server runs behind an nginx/Caddy/Cloudflare terminator. Without this,
+// express-rate-limit keys every request by the proxy's address and a single
+// noisy client exhausts the limit for all peers. Tune TRUST_PROXY env if
+// deployed behind multiple proxy layers.
+app.set('trust proxy', Number(process.env.TRUST_PROXY || 1));
+
 app.use(cors({
   origin: process.env.ALLOWED_ORIGIN || 'http://localhost:3000',
   credentials: true,
@@ -75,8 +82,12 @@ const auth = verifyNip98(rosterCache);
 // Routes
 app.use('/api/gate/scan', auth, createScanRouter(caches));
 app.use('/api/gate/event', auth, createEventRouter(caches));
-app.use('/api/gate/tip', auth, createTipRouter(caches));
-app.use('/api/gate/chain', auth, createChainRouter({ fetchFanChain }));
+// Tip lookup: needed by stewards who can issue chain events (roaming_steward
+// for cards, officers for sanctions/review outcomes). Gate stewards never
+// call it, so restricting here removes a cross-role chain-membership oracle.
+app.use('/api/gate/tip', auth, requireRole('roaming_steward', 'safety_officer', 'safeguarding_officer', 'admin'), createTipRouter(caches));
+// Full chain history: officer-only (rich data — PII-adjacent incident notes).
+app.use('/api/gate/chain', auth, requireRole('safety_officer', 'safeguarding_officer', 'admin'), createChainRouter({ fetchFanChain }));
 app.use('/api/gate/dashboard', auth, requireRole('safety_officer', 'admin'), createDashboardRouter(caches));
 app.use('/api/gate/flags', auth, requireRole('safety_officer', 'safeguarding_officer', 'admin'), createFlagsRouter(caches));
 app.use('/api/gate/subscribe', auth, createSubscribeRouter({ subscribeToLiveEvents }));

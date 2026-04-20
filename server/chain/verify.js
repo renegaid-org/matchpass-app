@@ -118,10 +118,20 @@ export function verifySignerAuthority(event, staffRosterEvent) {
   }
 
   const role = staffEntry[2] || 'unknown';
+  // Fourth element is either `external` flag or display name. Flag limits
+  // the roster entry to signing review outcomes only (no cards / sanctions).
+  const isExternal = staffEntry[3] === 'external';
 
-  // Cards require roaming_steward or above
+  // Cards require roaming_steward or above (safety_officer,
+  // safeguarding_officer, admin). Externals cannot sign cards.
   if (event.kind === EVENT_KINDS.CARD) {
-    const cardRoles = ['roaming_steward', 'safety_officer', 'admin'];
+    if (isExternal) {
+      return {
+        authorised: false,
+        reason: 'External reviewer cannot sign card events',
+      };
+    }
+    const cardRoles = ['roaming_steward', 'safety_officer', 'safeguarding_officer', 'admin'];
     if (!cardRoles.includes(role)) {
       return {
         authorised: false,
@@ -130,9 +140,15 @@ export function verifySignerAuthority(event, staffRosterEvent) {
     }
   }
 
-  // Sanctions require safety_officer or above
+  // Sanctions require safety_officer or above. Externals cannot sign.
   if (event.kind === EVENT_KINDS.SANCTION) {
-    const sanctionRoles = ['safety_officer', 'admin'];
+    if (isExternal) {
+      return {
+        authorised: false,
+        reason: 'External reviewer cannot sign sanction events',
+      };
+    }
+    const sanctionRoles = ['safety_officer', 'safeguarding_officer', 'admin'];
     if (!sanctionRoles.includes(role)) {
       return {
         authorised: false,
@@ -141,18 +157,40 @@ export function verifySignerAuthority(event, staffRosterEvent) {
     }
   }
 
-  // Review outcomes require safety_officer or above
+  // Review outcomes require safety_officer or above — external flag is
+  // permitted here (that's the whole point of external reviewers).
   if (event.kind === EVENT_KINDS.REVIEW_OUTCOME) {
-    const reviewRoles = ['safety_officer', 'admin'];
+    const reviewRoles = ['safety_officer', 'safeguarding_officer', 'admin'];
     if (!reviewRoles.includes(role)) {
       return {
         authorised: false,
         reason: `Signer role "${role}" insufficient for review outcome events (requires safety_officer or above)`,
       };
     }
+
+    // Self-review block — a reviewer cannot sign a review outcome for
+    // an event they themselves authored.
+    const reviewsTag = event.tags?.find(t => Array.isArray(t) && t[0] === 'reviews');
+    const reviewedEventId = reviewsTag?.[1];
+    const originalAuthor = _lookupEventAuthor ? _lookupEventAuthor(reviewedEventId) : null;
+    if (originalAuthor && originalAuthor === signerPubkey) {
+      return {
+        authorised: false,
+        reason: 'Self-review is prohibited: reviewer cannot sign a review outcome for their own event',
+      };
+    }
   }
 
-  return { authorised: true, role };
+  return { authorised: true, role, external: isExternal };
+}
+
+// Optional hook: set by the server to let verifySignerAuthority look up
+// the author of the event being reviewed (for self-review prohibition).
+// If unset, the self-review check is skipped at the chain-library layer
+// and enforced only at the PWA layer.
+let _lookupEventAuthor = null;
+export function setEventAuthorLookup(fn) {
+  _lookupEventAuthor = fn;
 }
 
 /**

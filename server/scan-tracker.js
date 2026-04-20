@@ -17,12 +17,37 @@ export class ScanTracker {
       const msSince = Date.now() - prior.time;
       if (msSince < 30_000 && prior.staffId === staffId) return { stewardError: true };
       if (this._duplicateFlags.length < MAX_DUPLICATE_FLAGS) {
-        this._duplicateFlags.push({ fanPubkey, firstGate: prior.gate, secondGate: gate, time: new Date() });
+        this._duplicateFlags.push({
+          id: `${fanPubkey}:${Date.now()}`,
+          fanPubkey,
+          firstGate: prior.gate,
+          firstStaffId: prior.staffId,
+          firstTime: prior.time,
+          secondGate: gate,
+          secondStaffId: staffId,
+          secondTime: Date.now(),
+          dismissed: false,
+          note: null,
+        });
       }
       return { duplicate: true };
     }
     this._admissions.set(fanPubkey, { gate, time: Date.now(), staffId });
     return null;
+  }
+
+  // List open (not-dismissed) duplicate flags. Used by officer dashboard.
+  listOpenFlags() {
+    return this._duplicateFlags.filter(f => !f.dismissed);
+  }
+
+  dismissFlag(id, note) {
+    const flag = this._duplicateFlags.find(f => f.id === id);
+    if (!flag) return false;
+    flag.dismissed = true;
+    flag.note = note || null;
+    flag.dismissedAt = Date.now();
+    return true;
   }
 
   recordResult(decision) {

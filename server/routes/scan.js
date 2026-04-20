@@ -1,5 +1,11 @@
 import { Router } from 'express';
 import { verifyVenueEntry } from '../venue-entry.js';
+import {
+  SUB_STATES,
+  subStateForVerifyError,
+  subStateForStatus,
+  reasonForSubState,
+} from '../constants.js';
 
 // Replay prevention for venue entry events (60s TTL)
 const MAX_CONSUMED_SCANS = 10_000;
@@ -15,38 +21,77 @@ export function _resetScanCache() {
   consumedScans.clear();
 }
 
+function respond(res, { status = 200, decision, sub_state, fanPubkey, entry, extra = {} }) {
+  const body = {
+    decision,
+    sub_state,
+    reason: reasonForSubState(sub_state),
+    ...(fanPubkey ? { fanPubkey } : {}),
+    ...(entry ? { x: entry.x, blossom: entry.blossom, photoKey: entry.photoKey } : {}),
+    ...extra,
+  };
+  return res.status(status).json(body);
+}
+
 export default function createScanRouter({ chainTipCache, scanTracker }, opts = {}) {
   const router = Router();
 
   router.post('/', (req, res) => {
     const { venue_entry_event } = req.body;
     if (!venue_entry_event) {
-      return res.status(400).json({ error: 'venue_entry_event required' });
+      return respond(res, {
+        status: 400,
+        decision: 'red',
+        sub_state: SUB_STATES.QR_NOT_VENUE_ENTRY,
+        extra: { error: 'venue_entry_event required' },
+      });
     }
 
     let entry;
     try {
       entry = verifyVenueEntry(venue_entry_event, opts);
     } catch (err) {
-      return res.status(400).json({ decision: 'red', error: err.message });
+      return respond(res, {
+        status: 400,
+        decision: 'red',
+        sub_state: subStateForVerifyError(err.message),
+        extra: { error: err.message },
+      });
     }
 
     // Validate event ID (mandatory)
     const eventId = venue_entry_event.id;
     if (!eventId || typeof eventId !== 'string' || !/^[0-9a-f]{64}$/.test(eventId)) {
-      return res.status(400).json({ decision: 'red', error: 'Missing or invalid event ID' });
+      return respond(res, {
+        status: 400,
+        decision: 'red',
+        sub_state: SUB_STATES.QR_INVALID_SIGNATURE,
+        extra: { error: 'Missing or invalid event ID' },
+      });
     }
 
     // Replay check
     if (consumedScans.has(eventId)) {
-      return res.status(400).json({ decision: 'red', error: 'QR already scanned' });
+      return respond(res, {
+        status: 400,
+        decision: 'red',
+        sub_state: SUB_STATES.QR_EXPIRED,
+        fanPubkey: entry.pubkey,
+        entry,
+        extra: { error: 'QR already scanned' },
+      });
     }
     if (consumedScans.size >= MAX_CONSUMED_SCANS) {
-      return res.status(429).json({ decision: 'red', error: 'Too many scan requests' });
+      return respond(res, {
+        status: 429,
+        decision: 'red',
+        sub_state: SUB_STATES.QR_INVALID_SIGNATURE,
+        extra: { error: 'Too many scan requests' },
+      });
     }
     consumedScans.set(eventId, Date.now());
 
-    // Duplicate admission check
+    // Validate gate_id shape
     const gate = req.body.gate_id || null;
     if (gate && (typeof gate !== 'string' || gate.length > 50)) {
       return res.status(400).json({ error: 'gate_id must be a string under 50 characters' });
@@ -56,36 +101,44 @@ export default function createScanRouter({ chainTipCache, scanTracker }, opts = 
 
     if (dupCheck?.duplicate) {
       scanTracker.recordResult('red');
-      return res.json({
-        decision: 'red', fanPubkey: entry.pubkey,
-        reason: 'Duplicate admission — flagged for review', duplicate: true,
+      return respond(res, {
+        decision: 'red',
+        sub_state: SUB_STATES.DUPLICATE_ADMISSION,
+        fanPubkey: entry.pubkey,
+        entry,
+        extra: { duplicate: true },
       });
     }
 
-    // Look up fan status from chain tip cache
+    // Chain-tip lookup
     const tip = chainTipCache.get(entry.pubkey);
 
     if (!tip) {
       scanTracker.recordResult('amber');
-      return res.json({
-        decision: 'amber', fanPubkey: entry.pubkey, status: 0,
-        reason: 'First visit — not yet in chain cache', firstTime: true,
-        x: entry.x, blossom: entry.blossom, photoKey: entry.photoKey,
+      return respond(res, {
+        decision: 'amber',
+        sub_state: SUB_STATES.FIRST_VISIT,
+        fanPubkey: entry.pubkey,
+        entry,
+        extra: { status: 0, firstTime: true },
       });
     }
 
     // 0=clean, 1=yellow, 2=red, 3=banned
-    let decision, reason = null;
-    if (tip.status === 3) { decision = 'red'; reason = 'Banned'; }
-    else if (tip.status === 2) { decision = 'red'; reason = 'Active red card or suspension'; }
-    else if (tip.status === 1) { decision = 'amber'; reason = 'Yellow card'; }
-    else { decision = 'green'; }
+    const sub_state = subStateForStatus(tip.status);
+    let decision;
+    if (tip.status === 3 || tip.status === 2) decision = 'red';
+    else if (tip.status === 1) decision = 'amber';
+    else decision = 'green';
 
     scanTracker.recordResult(decision);
 
-    return res.json({
-      decision, fanPubkey: entry.pubkey, status: tip.status, reason,
-      x: entry.x, blossom: entry.blossom, photoKey: entry.photoKey,
+    return respond(res, {
+      decision,
+      sub_state,
+      fanPubkey: entry.pubkey,
+      entry,
+      extra: { status: tip.status },
     });
   });
 

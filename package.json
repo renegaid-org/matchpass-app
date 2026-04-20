@@ -6,8 +6,14 @@
   "description": "Stateless gate verification server for MatchPass",
   "scripts": {
     "start": "node server/index.js",
+    "dev": "node server/index.js",
+    "dev:client": "cd client && npm run dev",
+    "build:client": "cd client && npm run build",
+    "install:client": "cd client && npm install",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:client": "cd client && npm run test",
+    "test:watch": "vitest",
+    "typecheck:client": "cd client && npm run typecheck"
   },
   "dependencies": {
     "express": "^4.21.0",

@@ -15,6 +15,7 @@ import createScanRouter from './routes/scan.js';
 import createEventRouter from './routes/event.js';
 import createTipRouter from './routes/tip.js';
 import createDashboardRouter from './routes/dashboard.js';
+import createFlagsRouter from './routes/flags.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -64,6 +65,7 @@ app.use('/api/gate/scan', auth, createScanRouter(caches));
 app.use('/api/gate/event', auth, createEventRouter(caches));
 app.use('/api/gate/tip', auth, createTipRouter(caches));
 app.use('/api/gate/dashboard', auth, requireRole('safety_officer', 'admin'), createDashboardRouter(caches));
+app.use('/api/gate/flags', auth, requireRole('safety_officer', 'safeguarding_officer', 'admin'), createFlagsRouter(caches));
 
 // Error handler
 app.use((err, req, res, next) => {

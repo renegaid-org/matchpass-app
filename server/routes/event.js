@@ -87,7 +87,10 @@ export default function createEventRouter({ chainTipCache, rosterCache }) {
         const tip = chainTipCache.get(fanPubkey);
         if (tip && tip.tipEventId !== previousTag[1]) {
           return res.status(409).json({
-            error: 'Chain tip mismatch', currentTip: tip.tipEventId,
+            error: 'chain_tip_mismatch',
+            currentTip: tip.tipEventId,
+            // PWA re-fetches /api/gate/chain/:pubkey to see intervening
+            // events and re-signs with the current tip.
           });
         }
       }

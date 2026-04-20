@@ -1,2 +1,12 @@
 node_modules/
+
+# Secrets — expanded coverage to avoid accidental commits.
 .env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+serviceAccountKey.json
+

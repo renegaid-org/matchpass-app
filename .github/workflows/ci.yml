@@ -6,9 +6,15 @@ on:
   pull_request:
     branches: [main]
 
+# Default to read-only permissions. Individual jobs upgrade where needed.
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -22,11 +28,15 @@ jobs:
     needs: test
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
       - name: Deploy to Hetzner
-        uses: appleboy/ssh-action@v1
+        # Pinned by commit SHA to defend against tag-hijack of a third-party action.
+        # v1 at the time of 2026-04-20 security audit. Update deliberately.
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}

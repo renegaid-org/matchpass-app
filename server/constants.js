@@ -11,6 +11,7 @@ export const SUB_STATES = {
   SUSPENSION_ACTIVE: 'suspension_active',
   DUPLICATE_ADMISSION: 'duplicate_admission',
   QR_EXPIRED: 'qr_expired',
+  QR_REPLAYED: 'qr_replayed',
   QR_FUTURE: 'qr_future',
   QR_INVALID_SIGNATURE: 'qr_invalid_signature',
   QR_NOT_VENUE_ENTRY: 'qr_not_venue_entry',
@@ -50,6 +51,7 @@ export function reasonForSubState(sub) {
     case SUB_STATES.SUSPENSION_ACTIVE: return 'Suspension active';
     case SUB_STATES.DUPLICATE_ADMISSION: return 'Already admitted today — hold for officer';
     case SUB_STATES.QR_EXPIRED: return 'QR expired — ask fan to refresh';
+    case SUB_STATES.QR_REPLAYED: return 'QR already used — possible replay attempt, ask fan to refresh';
     case SUB_STATES.QR_FUTURE: return 'QR timestamp in the future — check device clock';
     case SUB_STATES.QR_INVALID_SIGNATURE: return 'QR signature invalid — ask fan to refresh';
     case SUB_STATES.QR_NOT_VENUE_ENTRY: return 'Wrong QR type presented';

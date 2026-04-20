@@ -188,7 +188,11 @@ export function App() {
         title="MatchPass"
         roleBadge="Steward"
         onSettingsOpen={async () => {
-          if (confirm('Unpair from Signet?')) await unpair();
+          if (confirm('Unpair from Signet? This clears incident notes, offline queue, and today\'s stats on this device.')) {
+            localStorage.removeItem(GATE_STORAGE_KEY);
+            setGateId('');
+            await unpair();
+          }
         }}
       >
         <Home

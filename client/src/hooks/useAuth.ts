@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Nip46Client, type PairingStatus } from '../lib/nip46';
-import { loadSession, saveSession, clearSession } from '../lib/db';
+import { loadSession, saveSession, clearAllAppData, SESSION_TTL_MS } from '../lib/db';
 
 const DEFAULT_RELAY = 'wss://relay.trotters.cc';
 
@@ -49,11 +49,13 @@ export function useAuth() {
     client.onStatus(async (s) => {
       setStatus(s);
       if (s.kind === 'connected') {
+        const now = Date.now();
         await saveSession({
           sessionSecretHex: client.sessionSecretHex,
           remotePubkey: s.remotePubkey,
           relayUrl: client.relayUrl,
-          pairedAt: Date.now(),
+          pairedAt: now,
+          expiresAt: now + SESSION_TTL_MS,
         });
       }
     });
@@ -64,7 +66,9 @@ export function useAuth() {
   const unpair = useCallback(async () => {
     clientRef.current?.forget();
     clientRef.current = null;
-    await clearSession();
+    // Purge every app IDB store so a handed-off stadium device does not leak
+    // the previous steward's incident notes, pending events, or stats.
+    await clearAllAppData();
     setStatus({ kind: 'idle' });
   }, []);
 

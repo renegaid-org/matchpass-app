@@ -77,11 +77,18 @@ export async function connectAndSubscribe(relayUrl, caches, clubPubkeys) {
   // 1. Fetch existing roster events first (needed for signer context).
   // Read both canonical and legacy roster kinds during the transition window.
   if (clubPubkeys.length > 0) {
+    const clubSet = new Set(clubPubkeys);
     const rosterEvents = await collectEvents(relay, [{ kinds: ALL_ROSTER_KINDS, authors: clubPubkeys }]);
+    const now = Math.floor(Date.now() / 1000);
     // Keep newest per club across both kinds
     const newestByClub = new Map();
     for (const event of rosterEvents) {
       if (!verifyEvent(event)) continue;
+      // Defence-in-depth: the relay's `authors` filter is not authoritative —
+      // a hostile relay could return events from any pubkey. Re-check server-side.
+      if (!clubSet.has(event.pubkey)) continue;
+      // Reject future-dated roster events (prevents permanent pinning attacks).
+      if (event.created_at > now + 600) continue;
       const existing = newestByClub.get(event.pubkey);
       if (!existing || event.created_at > existing.created_at) {
         newestByClub.set(event.pubkey, event);
@@ -105,7 +112,7 @@ export async function connectAndSubscribe(relayUrl, caches, clubPubkeys) {
   subscribeToChainEvents(relay, caches);
   subscribeToRosterEvents(relay, rosterCache, clubPubkeys);
   if (reviewRequestCache) {
-    subscribeToReviewRequests(relay, reviewRequestCache, clubPubkeys);
+    subscribeToReviewRequests(relay, reviewRequestCache, clubPubkeys, rosterCache);
   }
 }
 
@@ -132,7 +139,7 @@ function subscribeToChainEvents(r, caches) {
  * `club` tag matches one of our known clubs. Populates the review
  * request cache and fans out to SSE listeners.
  */
-function subscribeToReviewRequests(r, reviewRequestCache, clubPubkeys) {
+function subscribeToReviewRequests(r, reviewRequestCache, clubPubkeys, rosterCache) {
   const clubSet = new Set(clubPubkeys);
   r.subscribe(
     [{ kinds: [REVIEW_REQUEST_KIND] }],
@@ -140,7 +147,13 @@ function subscribeToReviewRequests(r, reviewRequestCache, clubPubkeys) {
       onevent: (event) => {
         if (!verifyEvent(event)) return;
         const club = event.tags?.find(t => Array.isArray(t) && t[0] === 'club')?.[1];
-        if (club && !clubSet.has(club)) return;
+        if (!club || !clubSet.has(club)) return;
+        // Author must be rostered staff for the referenced club. Without this
+        // check any pubkey on the relay could flood the officer review queue.
+        if (rosterCache) {
+          const staff = rosterCache.findStaff(event.pubkey);
+          if (!staff || staff.clubPubkey !== club) return;
+        }
         if (reviewRequestCache.set(event)) notifyListeners(event);
       },
     }
@@ -152,12 +165,18 @@ function subscribeToReviewRequests(r, reviewRequestCache, clubPubkeys) {
  */
 function subscribeToRosterEvents(r, rosterCache, clubPubkeys) {
   if (clubPubkeys.length === 0) return;
+  const clubSet = new Set(clubPubkeys);
   // Subscribe to both canonical and legacy roster kinds during transition.
   r.subscribe(
     [{ kinds: ALL_ROSTER_KINDS, authors: clubPubkeys }],
     {
       onevent: (event) => {
         if (!verifyEvent(event)) return;
+        // Defence-in-depth: the relay's `authors` filter is not authoritative.
+        // Reject events whose signer is not in the approved club list.
+        if (!clubSet.has(event.pubkey)) return;
+        const now = Math.floor(Date.now() / 1000);
+        if (event.created_at > now + 600) return; // Reject future-dated rosters.
         try {
           // RosterCache.set keeps the newest by created_at, so legacy events
           // older than canonical are naturally superseded.
@@ -192,6 +211,26 @@ async function reconnect(relayUrl) {
         relay = null;
         reconnect(relayUrl);
       };
+
+      // Re-fetch historical events before resubscribing — bans/cards published
+      // while we were disconnected must be reflected in the caches, otherwise a
+      // banned fan could walk through the gate during the recovery window.
+      if (_clubPubkeys.length > 0) {
+        const clubSet = new Set(_clubPubkeys);
+        const now = Math.floor(Date.now() / 1000);
+        const rosterEvents = await collectEvents(relay, [{ kinds: ALL_ROSTER_KINDS, authors: _clubPubkeys }]);
+        for (const event of rosterEvents) {
+          if (!verifyEvent(event)) continue;
+          if (!clubSet.has(event.pubkey)) continue;
+          if (event.created_at > now + 600) continue;
+          try { _caches.rosterCache.set(event.pubkey, event); } catch { /* malformed */ }
+        }
+      }
+      const chainEvents = await collectEvents(relay, [{ kinds: ALL_CHAIN_KINDS }]);
+      for (const event of chainEvents) {
+        if (verifyEvent(event)) handleChainEvent(event, _caches.chainTipCache, _caches.rosterCache);
+      }
+      console.log(`Relay: re-synced ${chainEvents.length} chain event(s) after reconnect`);
 
       subscribeToChainEvents(relay, _caches);
       subscribeToRosterEvents(relay, _caches.rosterCache, _clubPubkeys);
@@ -234,9 +273,20 @@ function collectEvents(relay, filters, timeoutMs = 15000) {
  * All other events must be signed by a rostered staff member.
  */
 function handleChainEvent(event, chainTipCache, rosterCache) {
-  // Reject events with created_at more than 10 minutes in the future
+  // Only canonical chain kinds (31900-31905) are allowed to mutate state.
+  // Legacy kinds (31100-31105) are subscribed to for migration visibility but
+  // must never fall through to a status=0 reset — a hostile signer could use
+  // any non-canonical kind with a p-tag to clear a banned fan's tip.
+  if (!Object.values(EVENT_KINDS).includes(event.kind)) return;
+
+  // Reject events with created_at more than 10 minutes in the future.
   const now = Math.floor(Date.now() / 1000);
   if (event.created_at > now + 600) return;
+  // Reject absurdly-backdated events (more than 3 years old). A malicious signer
+  // could otherwise publish a card at epoch 0 so its ageSeconds exceeds 12mo and
+  // the card silently "expires" in getCurrentStatus.
+  const THREE_YEARS = 3 * 365 * 24 * 3600;
+  if (event.created_at < now - THREE_YEARS) return;
 
   // Signer authority check: non-membership events must come from rostered staff
   if (event.kind !== EVENT_KINDS.MEMBERSHIP) {

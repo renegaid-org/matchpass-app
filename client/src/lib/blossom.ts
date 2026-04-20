@@ -17,17 +17,78 @@ export interface PhotoResult {
   mimeType: string;
 }
 
+const FETCH_TIMEOUT_MS = 10_000;
+const MAX_PHOTO_BYTES = 5 * 1024 * 1024; // 5 MB
+const HEX64_RE = /^[0-9a-f]{64}$/i;
+
+// Reject URLs pointing to loopback / link-local / RFC1918 / metadata endpoints.
+// The Blossom URL arrives in a fan-signed QR, so it is attacker-controlled.
+function isBlossomHostBlocked(hostname: string): boolean {
+  // Normalise: strip IPv6 brackets, trailing dots, and lower-case so "[::1]"
+  // and "localhost." cannot bypass the block list.
+  let h = hostname.toLowerCase().replace(/\.$/, '');
+  if (h.startsWith('[') && h.endsWith(']')) h = h.slice(1, -1);
+  if (h === 'localhost' || h === '0.0.0.0') return true;
+  if (h.endsWith('.localhost')) return true;
+  if (h === '169.254.169.254') return true;
+  if (h === 'metadata.google.internal') return true;
+  if (/^10\./.test(h)) return true;
+  if (/^127\./.test(h)) return true;
+  if (/^169\.254\./.test(h)) return true;
+  if (/^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(h)) return true;
+  if (/^192\.168\./.test(h)) return true;
+  if (h === '::' || h === '::1' || h === '0:0:0:0:0:0:0:1' || h === '0:0:0:0:0:0:0:0') return true;
+  if (/^(fe80:|fc00:|fd00:)/i.test(h)) return true;
+  if (/^::ffff:/i.test(h)) return true;
+  return false;
+}
+
+export function validateBlossomUrl(raw: string): URL {
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new Error('Invalid Blossom URL');
+  }
+  if (parsed.protocol !== 'https:') {
+    throw new Error(`Blossom URL must use https:// (got ${parsed.protocol})`);
+  }
+  if (isBlossomHostBlocked(parsed.hostname)) {
+    throw new Error(`Blossom host ${parsed.hostname} is blocked`);
+  }
+  return parsed;
+}
+
 export async function fetchAndDecryptPhoto(params: {
   blossomUrl: string;
   photoHash: string;
   photoKey: string;
 }): Promise<PhotoResult> {
-  const url = `${params.blossomUrl.replace(/\/$/, '')}/${params.photoHash}`;
-  const response = await fetch(url);
+  if (!HEX64_RE.test(params.photoHash)) {
+    throw new Error('photo_hash must be 64 hex chars');
+  }
+  if (!HEX64_RE.test(params.photoKey)) {
+    throw new Error('photo_key must be 64 hex chars');
+  }
+  const base = validateBlossomUrl(params.blossomUrl);
+  const url = `${base.toString().replace(/\/$/, '')}/${params.photoHash}`;
+
+  const response = await fetch(url, {
+    redirect: 'error',
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
   if (!response.ok) {
     throw new Error(`Blossom fetch failed: ${response.status}`);
   }
-  const ciphertext = new Uint8Array(await response.arrayBuffer());
+  const contentLength = Number(response.headers.get('content-length'));
+  if (contentLength > MAX_PHOTO_BYTES) {
+    throw new Error(`Photo too large (${contentLength} bytes)`);
+  }
+  const buffer = await response.arrayBuffer();
+  if (buffer.byteLength > MAX_PHOTO_BYTES) {
+    throw new Error(`Photo too large (${buffer.byteLength} bytes)`);
+  }
+  const ciphertext = new Uint8Array(buffer);
 
   // Signet's encryption layout: [iv: 12B][ciphertext+tag].
   if (ciphertext.length < 28) {

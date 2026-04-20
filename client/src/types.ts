@@ -21,6 +21,7 @@ export type SubState =
   | 'suspension_active'
   | 'duplicate_admission'
   | 'qr_expired'
+  | 'qr_replayed'
   | 'qr_future'
   | 'qr_invalid_signature'
   | 'qr_not_venue_entry'

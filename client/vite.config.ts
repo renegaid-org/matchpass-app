@@ -15,7 +15,9 @@ export default defineConfig({
   build: {
     outDir: '../public',
     emptyOutDir: true,
-    sourcemap: true,
+    // Source maps reveal dev comments and make reverse-engineering chain-validation
+    // logic trivial. Emit privately for debugging (mode-gated) but not to prod.
+    sourcemap: process.env.NODE_ENV === 'production' ? false : true,
   },
   test: {
     environment: 'jsdom',

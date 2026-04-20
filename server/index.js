@@ -18,6 +18,7 @@ import {
   publishEvent,
 } from './relay.js';
 import { verifyNip98, requireRole } from './auth.js';
+import { hasEventAuthorLookup } from './chain/verify.js';
 
 import createScanRouter from './routes/scan.js';
 import createEventRouter from './routes/event.js';
@@ -38,6 +39,13 @@ const reviewRequestCache = new ReviewRequestCache();
 const caches = { chainTipCache, rosterCache, scanTracker, reviewRequestCache };
 
 const app = express();
+
+// Trust one proxy hop — required for req.ip to reflect the real client when
+// this server runs behind an nginx/Caddy/Cloudflare terminator. Without this,
+// express-rate-limit keys every request by the proxy's address and a single
+// noisy client exhausts the limit for all peers. Tune TRUST_PROXY env if
+// deployed behind multiple proxy layers.
+app.set('trust proxy', Number(process.env.TRUST_PROXY || 1));
 
 app.use(cors({
   origin: process.env.ALLOWED_ORIGIN || 'http://localhost:3000',
@@ -64,9 +72,10 @@ app.use('/api/gate/event', rateLimit({ windowMs: 60_000, max: 30 }));
 // Static files (steward PWA)
 app.use(express.static(join(__dirname, '..', 'public')));
 
-// Health/status (unauthenticated)
+// Health/status (unauthenticated). Minimal body to avoid leaking relay
+// endpoint reachability / deployment detail to unauthenticated scanners.
 app.get('/api/gate/status', (req, res) => {
-  res.json({ ok: true, relay: getRelayStatus() });
+  res.json({ ok: true });
 });
 
 // Auth middleware
@@ -75,8 +84,12 @@ const auth = verifyNip98(rosterCache);
 // Routes
 app.use('/api/gate/scan', auth, createScanRouter(caches));
 app.use('/api/gate/event', auth, createEventRouter(caches));
-app.use('/api/gate/tip', auth, createTipRouter(caches));
-app.use('/api/gate/chain', auth, createChainRouter({ fetchFanChain }));
+// Tip lookup: needed by stewards who can issue chain events (roaming_steward
+// for cards, officers for sanctions/review outcomes). Gate stewards never
+// call it, so restricting here removes a cross-role chain-membership oracle.
+app.use('/api/gate/tip', auth, requireRole('roaming_steward', 'safety_officer', 'safeguarding_officer', 'admin'), createTipRouter(caches));
+// Full chain history: officer-only (rich data — PII-adjacent incident notes).
+app.use('/api/gate/chain', auth, requireRole('safety_officer', 'safeguarding_officer', 'admin'), createChainRouter({ fetchFanChain }));
 app.use('/api/gate/dashboard', auth, requireRole('safety_officer', 'admin'), createDashboardRouter(caches));
 app.use('/api/gate/flags', auth, requireRole('safety_officer', 'safeguarding_officer', 'admin'), createFlagsRouter(caches));
 app.use('/api/gate/subscribe', auth, createSubscribeRouter({ subscribeToLiveEvents }));
@@ -106,6 +119,12 @@ async function start() {
   await connectAndSubscribe(RELAY_URL, { chainTipCache, rosterCache }, clubPubkeys);
 
   scheduleMidnightClear(scanTracker);
+
+  if (!hasEventAuthorLookup()) {
+    console.warn('WARNING: self-review prohibition is not enforced server-side. '
+      + 'Install an event-author lookup via setEventAuthorLookup(fn) to close '
+      + 'the loophole where an officer signs a REVIEW_OUTCOME for their own event.');
+  }
 
   app.listen(PORT, () => {
     console.log(`matchpass-gate listening on ${PORT}`);

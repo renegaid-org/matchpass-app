@@ -16,7 +16,7 @@
  */
 
 import { Relay } from 'nostr-tools/relay';
-import { generateSecretKey, getPublicKey, finalizeEvent } from 'nostr-tools/pure';
+import { generateSecretKey, getPublicKey, finalizeEvent, verifyEvent } from 'nostr-tools/pure';
 import type { UnsignedEvent } from 'nostr-tools/pure';
 import { nip44 } from 'nostr-tools';
 import { bytesToHex } from '@noble/hashes/utils';
@@ -169,10 +169,16 @@ export class Nip46Client {
     }
 
     // Connect event: first reply from Signet — its pubkey in result.
+    // The claimed pubkey in `result` must match the sender of the event, otherwise
+    // any relay peer who encrypts to sessionPubkey could forge a pairing reply.
     if (!this.state.remotePubkey && parsed.result && /^[0-9a-f]{64}$/i.test(parsed.result)) {
-      this.state.remotePubkey = parsed.result;
+      if (parsed.result.toLowerCase() !== signedEvent.pubkey.toLowerCase()) {
+        console.warn('NIP-46 pairing rejected: result pubkey does not match sender');
+        return;
+      }
+      this.state.remotePubkey = signedEvent.pubkey;
       this.state.connectedAt = Date.now();
-      this.emit({ kind: 'connected', remotePubkey: parsed.result });
+      this.emit({ kind: 'connected', remotePubkey: signedEvent.pubkey });
       return;
     }
 
@@ -227,7 +233,7 @@ export class Nip46Client {
 
     await this.sendEncrypted(this.state.remotePubkey, JSON.stringify(request));
     const resultJson = await resultPromise;
-    return JSON.parse(resultJson) as NostrEvent;
+    return verifySignerResponse(resultJson, template, this.state.remotePubkey);
   }
 
   /** Ask the remote signer for its public key (round-trip sanity check). */
@@ -264,6 +270,40 @@ export class Nip46Client {
     this.state.connectedAt = null;
     this.emit({ kind: 'idle' });
   }
+}
+
+/**
+ * Validate a signed event returned from a remote signer over NIP-46.
+ * Rejects pubkey mismatch, template tampering, and invalid signatures.
+ * Exported for unit tests.
+ */
+export function verifySignerResponse(
+  resultJson: string,
+  template: EventTemplate,
+  expectedPubkey: string,
+): NostrEvent {
+  let signed: NostrEvent;
+  try {
+    signed = JSON.parse(resultJson) as NostrEvent;
+  } catch {
+    throw new Error('Signer returned malformed JSON');
+  }
+  if (!signed || typeof signed !== 'object') {
+    throw new Error('Signer returned non-object');
+  }
+  if (signed.pubkey?.toLowerCase() !== expectedPubkey.toLowerCase()) {
+    throw new Error('Signed event pubkey does not match remote signer');
+  }
+  if (signed.kind !== template.kind
+    || signed.content !== template.content
+    || signed.created_at !== template.created_at
+    || JSON.stringify(signed.tags) !== JSON.stringify(template.tags)) {
+    throw new Error('Signed event does not match template');
+  }
+  if (!verifyEvent(signed)) {
+    throw new Error('Signed event signature is invalid');
+  }
+  return signed;
 }
 
 function hexToBytes(hex: string): Uint8Array {

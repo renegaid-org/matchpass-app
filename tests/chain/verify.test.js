@@ -1,7 +1,7 @@
 // tests/chain/verify.test.js
 
 import { describe, it, expect } from 'vitest';
-import { getCurrentStatus } from '../../server/chain/verify.js';
+import { getCurrentStatus, verifyChain } from '../../server/chain/verify.js';
 import { EVENT_KINDS, STATUS } from '../../server/chain/types.js';
 
 const fanPubkey = 'f'.repeat(64);
@@ -82,6 +82,20 @@ describe('getCurrentStatus — review outcomes', () => {
     expect(result.status).toBe(STATUS.RED);
     expect(result.statusName).toBe('red');
     expect(result.activeCards).toHaveLength(2);
+  });
+
+  it('verifyChain returns tip=null when events have invalid signatures', () => {
+    // Mock events have fake signatures, so verifyEvent() fails for all of them.
+    // Prior to the fix, tip was still populated; callers that ignored `valid`
+    // would act on attacker-controlled data.
+    const events = [
+      mockEvent(EVENT_KINDS.MEMBERSHIP, 'a'.repeat(64), [['p', fanPubkey]]),
+    ];
+    events[0].pubkey = fanPubkey;
+    const result = verifyChain(events);
+    expect(result.valid).toBe(false);
+    expect(result.tip).toBeNull();
+    expect(result.errors.length).toBeGreaterThan(0);
   });
 
   it('dismissed red card leaves a yellow card as the only active card', () => {

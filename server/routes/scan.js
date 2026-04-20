@@ -70,15 +70,16 @@ export default function createScanRouter({ chainTipCache, scanTracker }, opts = 
       });
     }
 
-    // Replay check
+    // Replay check — distinguish from expiry so officers see a forensic signal
+    // when the same QR is presented multiple times (ticket-sharing, screenshot).
     if (consumedScans.has(eventId)) {
       return respond(res, {
         status: 400,
         decision: 'red',
-        sub_state: SUB_STATES.QR_EXPIRED,
+        sub_state: SUB_STATES.QR_REPLAYED,
         fanPubkey: entry.pubkey,
         entry,
-        extra: { error: 'QR already scanned' },
+        extra: { error: 'QR already scanned', replay: true },
       });
     }
     if (consumedScans.size >= MAX_CONSUMED_SCANS) {

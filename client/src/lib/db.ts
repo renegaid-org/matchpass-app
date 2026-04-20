@@ -19,7 +19,12 @@ export interface SessionRecord {
   remotePubkey: string;
   relayUrl: string;
   pairedAt: number;
+  /** Session expiry (ms since epoch). Records older than this are refused on load. */
+  expiresAt?: number;
 }
+
+/** How long a paired session is trusted before forcing a re-pair. */
+export const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 export interface StewardStatsRecord {
   date: string; // YYYY-MM-DD
@@ -87,12 +92,33 @@ export async function saveSession(session: SessionRecord): Promise<void> {
 
 export async function loadSession(): Promise<SessionRecord | undefined> {
   const d = await db();
-  return d.get('session', 'current');
+  const rec = (await d.get('session', 'current')) as SessionRecord | undefined;
+  if (!rec) return undefined;
+  if (rec.expiresAt && rec.expiresAt < Date.now()) {
+    // Session aged out — purge all app data so an expired device does not
+    // leave incident notes / pending events behind for the next steward.
+    await clearAllAppData();
+    return undefined;
+  }
+  return rec;
 }
 
 export async function clearSession(): Promise<void> {
   const d = await db();
   await d.delete('session', 'current');
+}
+
+/**
+ * Purge every app-owned IDB store. Used on unpair and on session expiry so
+ * PII-adjacent data (incident notes + photos, offline queue, daily stats)
+ * does not linger on a shared stadium device after a steward hands it off.
+ */
+export async function clearAllAppData(): Promise<void> {
+  const d = await db();
+  const stores = ['session', 'stewardStats', 'pendingEvents', 'pendingScans', 'unlinkedIncidents'];
+  const tx = d.transaction(stores, 'readwrite');
+  await Promise.all(stores.map(s => tx.objectStore(s).clear()));
+  await tx.done;
 }
 
 export async function todayKey(): Promise<string> {

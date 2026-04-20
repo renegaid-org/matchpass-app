@@ -79,10 +79,14 @@ export function verifyChain(events) {
     }
   }
 
-  const tip = events[events.length - 1].id;
+  // Only report a tip if the chain verified cleanly. Returning a populated tip
+  // on a chain with signature/kind/linkage errors lets callers who ignore
+  // `valid` act on attacker-controlled data.
+  const valid = errors.length === 0;
+  const tip = valid ? events[events.length - 1].id : null;
 
   return {
-    valid: errors.length === 0,
+    valid,
     tip,
     length: events.length,
     errors,
@@ -188,9 +192,17 @@ export function verifySignerAuthority(event, staffRosterEvent) {
 // the author of the event being reviewed (for self-review prohibition).
 // If unset, the self-review check is skipped at the chain-library layer
 // and enforced only at the PWA layer.
+//
+// SECURITY NOTE: the PWA enforcement is bypassable by any rostered officer
+// who crafts a REVIEW_OUTCOME directly via /api/gate/event. Operators SHOULD
+// wire setEventAuthorLookup(fn) at server boot to close the self-review
+// loophole server-side. See audit report.
 let _lookupEventAuthor = null;
 export function setEventAuthorLookup(fn) {
   _lookupEventAuthor = fn;
+}
+export function hasEventAuthorLookup() {
+  return _lookupEventAuthor !== null;
 }
 
 /**

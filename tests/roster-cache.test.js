@@ -53,6 +53,19 @@ describe('RosterCache', () => {
     expect(cache.findStaff('f'.repeat(64))).toBeNull();
   });
 
+  it('rejects future-dated roster events (prevents permanent pinning)', () => {
+    const now = Math.floor(Date.now() / 1000);
+    const farFuture = { ...rosterEvent, id: 'rf', created_at: now + 3600 };
+    expect(cache.set(clubPubkey, farFuture)).toBe(false);
+    expect(cache.get(clubPubkey)).toBeUndefined();
+  });
+
+  it('accepts roster events within the +600s clock-skew allowance', () => {
+    const now = Math.floor(Date.now() / 1000);
+    const nearFuture = { ...rosterEvent, id: 'rn', created_at: now + 60 };
+    expect(cache.set(clubPubkey, nearFuture)).toBe(true);
+  });
+
   it('clubPubkeys returns array of known clubs', () => {
     expect(cache.clubPubkeys).toEqual([]);
 

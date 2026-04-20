@@ -6,8 +6,11 @@ import { parseRosterEvent } from './roster.js';
 export class RosterCache {
   constructor() { this._rosters = new Map(); }
 
-  // Store a roster event. Returns false if stale (older created_at than current).
+  // Store a roster event. Returns false if stale (older created_at than current)
+  // or future-dated (prevents permanent roster pinning if a club key is compromised).
   set(clubPubkey, rosterEvent) {
+    const now = Math.floor(Date.now() / 1000);
+    if (rosterEvent.created_at > now + 600) return false;
     const existing = this._rosters.get(clubPubkey);
     if (existing && rosterEvent.created_at <= existing.createdAt) return false;
     const staff = parseRosterEvent(rosterEvent);

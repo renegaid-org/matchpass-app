@@ -52,4 +52,27 @@ describe('ChainTipCache', () => {
     cache.set(pubkey, { tipEventId: 'b'.repeat(64), status: 0 });
     expect(cache.get(pubkey).createdAt).toBe(0);
   });
+
+  it('LRU eviction preserves RED and BANNED entries (ban-evasion defence)', () => {
+    const small = new ChainTipCache(3);
+    const bannedFan = 'b'.repeat(64);
+    small.set(bannedFan, { tipEventId: '1'.repeat(64), status: 3 }); // BANNED
+    small.set('c'.repeat(64), { tipEventId: '2'.repeat(64), status: 0 });
+    small.set('d'.repeat(64), { tipEventId: '3'.repeat(64), status: 0 });
+    // Overflow — must evict the oldest CLEAN entry, not the banned one.
+    small.set('e'.repeat(64), { tipEventId: '4'.repeat(64), status: 0 });
+    expect(small.get(bannedFan)).toBeDefined();
+    expect(small.get(bannedFan).status).toBe(3);
+    expect(small.get('c'.repeat(64))).toBeUndefined();
+  });
+
+  it('LRU eviction preserves RED entries too', () => {
+    const small = new ChainTipCache(2);
+    const redFan = 'f'.repeat(64);
+    small.set(redFan, { tipEventId: '1'.repeat(64), status: 2 }); // RED
+    small.set('a'.repeat(64), { tipEventId: '2'.repeat(64), status: 0 });
+    small.set('b'.repeat(64), { tipEventId: '3'.repeat(64), status: 0 });
+    expect(small.get(redFan)).toBeDefined();
+    expect(small.get(redFan).status).toBe(2);
+  });
 });

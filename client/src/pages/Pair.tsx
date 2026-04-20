@@ -62,28 +62,15 @@ export function Pair({ status, onStart, onCancel }: Props) {
               marginBottom: 16,
             }}
           >
-            Open Signet on your phone and scan this code, or tap the link.
+            Open Signet on your phone and scan this code.
           </p>
           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
             <QRCode value={status.uri} size={256} />
           </div>
-          <a
-            href={status.uri}
-            style={{
-              color: 'var(--accent)',
-              fontSize: '0.85rem',
-              wordBreak: 'break-all',
-            }}
-          >
-            {status.uri.slice(0, 48)}...
-          </a>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+            Session: <code>{status.sessionPubkey.slice(0, 12)}…{status.sessionPubkey.slice(-8)}</code>
+          </p>
           <div style={{ display: 'flex', gap: 8, marginTop: 24 }}>
-            <button
-              className="btn btn-secondary"
-              onClick={() => navigator.clipboard?.writeText(status.uri)}
-            >
-              Copy link
-            </button>
             <button className="btn btn-ghost" onClick={onCancel}>
               Cancel
             </button>

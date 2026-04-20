@@ -15,8 +15,13 @@ const BLOCKED_HOSTS = new Set([
   'metadata.google.internal',
 ]);
 function isBlockedHost(hostname) {
-  const h = hostname.toLowerCase();
+  // Normalise: strip IPv6 brackets, trailing dots, and lower-case. new URL()
+  // returns "[::1]" for IPv6 literals and preserves trailing dots on FQDNs.
+  // Without stripping, `[::1]` and `localhost.` bypass the block set.
+  let h = hostname.toLowerCase().replace(/\.$/, '');
+  if (h.startsWith('[') && h.endsWith(']')) h = h.slice(1, -1);
   if (BLOCKED_HOSTS.has(h)) return true;
+  if (h === 'localhost') return true;
   if (h.endsWith('.localhost')) return true;
   // IPv4 private ranges
   if (/^10\./.test(h)) return true;
@@ -24,8 +29,13 @@ function isBlockedHost(hostname) {
   if (/^169\.254\./.test(h)) return true;
   if (/^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(h)) return true;
   if (/^192\.168\./.test(h)) return true;
-  // IPv6 loopback / link-local / ULA
-  if (/^(fe80:|fc00:|fd00:|::1)/i.test(h)) return true;
+  // IPv6 loopback / link-local / ULA — note the normalised address may drop
+  // a leading "::" prefix (e.g. "::1" normalises to "::1" still; "::ffff:a.b.c.d"
+  // is the IPv4-mapped form, commonly reachable).
+  if (h === '::' || h === '::1' || h === '0:0:0:0:0:0:0:1' || h === '0:0:0:0:0:0:0:0') return true;
+  if (/^(fe80:|fc00:|fd00:)/i.test(h)) return true;
+  // IPv4-mapped IPv6: ::ffff:127.0.0.1 etc — reject anything starting with ::ffff
+  if (/^::ffff:/i.test(h)) return true;
   return false;
 }
 

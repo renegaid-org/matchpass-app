@@ -18,16 +18,23 @@ export class ChainTipCache {
     // Delete first so re-insert moves to end (Map insertion order = LRU)
     this._tips.delete(fanPubkey);
     this._tips.set(fanPubkey, { tipEventId, status, createdAt, lastSeen: new Date() });
-    // Evict oldest entries if over capacity, but skip RED/BANNED entries.
-    // Without this, an attacker can publish 100k+ fresh-fan membership events
-    // to evict a real ban — the gate would then see an empty cache for the
-    // banned fan and treat them as first-visit.
+    // Evict oldest entries if over capacity, but skip RED/BANNED entries so
+    // an attacker cannot publish 100k+ membership events to evict a real ban.
+    // If the whole cache is saturated with RED/BANNED (unbounded growth) the
+    // loop below falls through to a hard-cap evict at maxSize * 2 to prevent
+    // a fully-RED cache from OOM-ing the process.
     if (this._tips.size > this._maxSize) {
+      let evicted = false;
       for (const [key, entry] of this._tips) {
-        if (key === fanPubkey) continue; // never evict the just-inserted entry
-        if (entry.status >= 2) continue; // preserve RED (2) and BANNED (3)
+        if (key === fanPubkey) continue;
+        if (entry.status >= 2) continue;
         this._tips.delete(key);
+        evicted = true;
         break;
+      }
+      if (!evicted && this._tips.size > this._maxSize * 2) {
+        const oldest = this._tips.keys().next().value;
+        if (oldest !== fanPubkey) this._tips.delete(oldest);
       }
     }
   }

@@ -7,12 +7,17 @@ import { publishEvent } from '../relay.js';
 const ALLOWED_KINDS = new Set(Object.values(EVENT_KINDS));
 
 // Per-fan lock — prevents concurrent submissions racing on the same chain tip.
-// A hung publishEvent (slow relay) previously pinned the lock indefinitely,
-// blocking every subsequent event for that fan. Now bounded by FAN_LOCK_TIMEOUT_MS
-// plus a map-size cap that drops the oldest lock once full.
+// Bounded by FAN_LOCK_TIMEOUT_MS plus a size cap that REFUSES new requests once
+// saturated. Early-eviction was unsafe: deleting a still-running promise lets
+// another request skip the queue (TOCTOU on the chain tip), and the finally
+// deleted the lock by key which could cascade-delete a newer request's lock.
 const FAN_LOCK_TIMEOUT_MS = 30_000;
 const MAX_FAN_LOCKS = 10_000;
 const fanLocks = new Map(); // fanPubkey -> Promise
+
+class FanLockSaturated extends Error {
+  constructor() { super('fan_lock_saturated'); this.code = 'SATURATED'; }
+}
 
 async function withFanLock(fanPubkey, fn) {
   while (fanLocks.has(fanPubkey)) {
@@ -22,21 +27,25 @@ async function withFanLock(fanPubkey, fn) {
       // The prior holder rejected — proceed with our own lock.
     }
   }
+  if (fanLocks.size >= MAX_FAN_LOCKS) {
+    throw new FanLockSaturated();
+  }
   let timer;
   const timeout = new Promise((_, reject) => {
     timer = setTimeout(() => reject(new Error('fan_lock_timeout')), FAN_LOCK_TIMEOUT_MS);
   });
   const promise = Promise.race([fn(), timeout]);
   fanLocks.set(fanPubkey, promise);
-  if (fanLocks.size > MAX_FAN_LOCKS) {
-    const oldest = fanLocks.keys().next().value;
-    if (oldest !== fanPubkey) fanLocks.delete(oldest);
-  }
+  const ownPromise = promise;
   try {
     return await promise;
   } finally {
     clearTimeout(timer);
-    fanLocks.delete(fanPubkey);
+    // Only delete if we still own the slot — a concurrent request that arrived
+    // after we set ours must not have its lock cleared by our finally.
+    if (fanLocks.get(fanPubkey) === ownPromise) {
+      fanLocks.delete(fanPubkey);
+    }
   }
 }
 
@@ -72,7 +81,8 @@ export default function createEventRouter({ chainTipCache, rosterCache }) {
     }
     const fanPubkey = pTag[1];
 
-    return withFanLock(fanPubkey, async () => {
+    try {
+      return await withFanLock(fanPubkey, async () => {
       if (event.kind === EVENT_KINDS.MEMBERSHIP) {
         // Membership must be self-signed by the fan
         if (event.pubkey !== fanPubkey) {
@@ -169,7 +179,16 @@ export default function createEventRouter({ chainTipCache, rosterCache }) {
       chainTipCache.set(fanPubkey, { tipEventId: event.id, status, createdAt: event.created_at });
 
       return res.status(201).json({ ok: true, eventId: event.id, fanPubkey });
-    });
+      });
+    } catch (err) {
+      if (err instanceof FanLockSaturated) {
+        return res.status(503).json({ error: 'Server busy — retry shortly' });
+      }
+      if (err?.message === 'fan_lock_timeout') {
+        return res.status(504).json({ error: 'Upstream timeout' });
+      }
+      throw err;
+    }
   });
 
   return router;

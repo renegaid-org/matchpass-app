@@ -36,4 +36,16 @@ describe('validateBlossomUrl', () => {
   it('rejects garbage strings', () => {
     expect(() => validateBlossomUrl('not-a-url')).toThrow();
   });
+
+  it('rejects IPv6 loopback via bracketed literal', () => {
+    expect(() => validateBlossomUrl('https://[::1]/')).toThrow(/blocked/);
+  });
+
+  it('rejects IPv4-mapped IPv6', () => {
+    expect(() => validateBlossomUrl('https://[::ffff:127.0.0.1]/')).toThrow(/blocked/);
+  });
+
+  it('rejects trailing-dot localhost FQDN', () => {
+    expect(() => validateBlossomUrl('https://localhost./')).toThrow(/blocked/);
+  });
 });

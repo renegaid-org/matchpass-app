@@ -24,8 +24,11 @@ const HEX64_RE = /^[0-9a-f]{64}$/i;
 // Reject URLs pointing to loopback / link-local / RFC1918 / metadata endpoints.
 // The Blossom URL arrives in a fan-signed QR, so it is attacker-controlled.
 function isBlossomHostBlocked(hostname: string): boolean {
-  const h = hostname.toLowerCase();
-  if (h === 'localhost' || h === '0.0.0.0' || h === '::1') return true;
+  // Normalise: strip IPv6 brackets, trailing dots, and lower-case so "[::1]"
+  // and "localhost." cannot bypass the block list.
+  let h = hostname.toLowerCase().replace(/\.$/, '');
+  if (h.startsWith('[') && h.endsWith(']')) h = h.slice(1, -1);
+  if (h === 'localhost' || h === '0.0.0.0') return true;
   if (h.endsWith('.localhost')) return true;
   if (h === '169.254.169.254') return true;
   if (h === 'metadata.google.internal') return true;
@@ -34,7 +37,9 @@ function isBlossomHostBlocked(hostname: string): boolean {
   if (/^169\.254\./.test(h)) return true;
   if (/^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(h)) return true;
   if (/^192\.168\./.test(h)) return true;
-  if (/^(fe80:|fc00:|fd00:|::1)/i.test(h)) return true;
+  if (h === '::' || h === '::1' || h === '0:0:0:0:0:0:0:1' || h === '0:0:0:0:0:0:0:0') return true;
+  if (/^(fe80:|fc00:|fd00:)/i.test(h)) return true;
+  if (/^::ffff:/i.test(h)) return true;
   return false;
 }
 

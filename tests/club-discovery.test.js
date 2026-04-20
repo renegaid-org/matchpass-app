@@ -36,4 +36,16 @@ describe('ClubDiscovery URL validation', () => {
   it('rejects GCP metadata hostname', () => {
     expect(() => new ClubDiscovery('http://metadata.google.internal/')).toThrow(/blocked/);
   });
+
+  it('rejects IPv6 loopback via bracketed literal', () => {
+    expect(() => new ClubDiscovery('http://[::1]/')).toThrow(/blocked/);
+  });
+
+  it('rejects IPv4-mapped IPv6', () => {
+    expect(() => new ClubDiscovery('http://[::ffff:127.0.0.1]/')).toThrow(/blocked/);
+  });
+
+  it('rejects trailing-dot localhost FQDN', () => {
+    expect(() => new ClubDiscovery('http://localhost./')).toThrow(/blocked/);
+  });
 });

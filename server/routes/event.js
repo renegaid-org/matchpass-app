@@ -148,7 +148,7 @@ export default function createEventRouter({ chainTipCache, rosterCache }) {
         // Non-status-changing events: preserve any existing status
         status = chainTipCache.get(fanPubkey)?.status ?? 0;
       }
-      chainTipCache.set(fanPubkey, { tipEventId: event.id, status });
+      chainTipCache.set(fanPubkey, { tipEventId: event.id, status, createdAt: event.created_at });
 
       return res.status(201).json({ ok: true, eventId: event.id, fanPubkey });
     });

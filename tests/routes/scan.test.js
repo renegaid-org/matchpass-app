@@ -91,4 +91,24 @@ describe('POST /scan', () => {
     expect(body.blossom).toBe('https://blossom.example.com');
     expect(body.photoKey).toBe('c'.repeat(64));
   });
+
+  it('same-steward double-tap does not double-count stats', async () => {
+    const pubkey = 'a'.repeat(64);
+    chainTipCache.set(pubkey, { tipEventId: 'tip1', status: 0 });
+    const app = buildApp({ chainTipCache, scanTracker }, { skipSignatureCheck: true });
+
+    const first = await post(app, '/scan', {
+      venue_entry_event: makeVenueEvent(pubkey, 'd'.repeat(64)),
+    });
+    expect(first.body.decision).toBe('green');
+
+    const second = await post(app, '/scan', {
+      venue_entry_event: makeVenueEvent(pubkey, 'e'.repeat(64)),
+    });
+    expect(second.body.decision).toBe('green');
+    expect(second.body.doubleTap).toBe(true);
+
+    expect(scanTracker.getStats().green).toBe(1);
+    expect(scanTracker.getStats().total).toBe(1);
+  });
 });

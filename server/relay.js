@@ -207,8 +207,8 @@ function handleChainEvent(event, chainTipCache, rosterCache) {
   const fanPubkey = pTag[1];
 
   const existing = chainTipCache.get(fanPubkey);
-  // Only update if newer (by created_at). Full chain walk happens at sync time.
-  if (existing && existing._createdAt && event.created_at <= existing._createdAt) return;
+  // Only update if strictly newer (by created_at). Full chain walk happens at sync time.
+  if (existing && existing.createdAt && event.created_at <= existing.createdAt) return;
 
   // Derive status from event kind
   let status = 0;
@@ -229,10 +229,7 @@ function handleChainEvent(event, chainTipCache, rosterCache) {
     status = existing?.status ?? 0;
   }
 
-  chainTipCache.set(fanPubkey, { tipEventId: event.id, status });
-  // Store created_at for ordering comparison (internal use)
-  const tip = chainTipCache.get(fanPubkey);
-  tip._createdAt = event.created_at;
+  chainTipCache.set(fanPubkey, { tipEventId: event.id, status, createdAt: event.created_at });
 }
 
 /**

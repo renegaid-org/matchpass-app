@@ -40,4 +40,16 @@ describe('ChainTipCache', () => {
     expect(cache.size).toBe(0);
     expect(cache.get('a'.repeat(64))).toBeUndefined();
   });
+
+  it('stores createdAt for ordering', () => {
+    const pubkey = 'a'.repeat(64);
+    cache.set(pubkey, { tipEventId: 'b'.repeat(64), status: 0, createdAt: 1000 });
+    expect(cache.get(pubkey).createdAt).toBe(1000);
+  });
+
+  it('defaults createdAt to 0 when omitted', () => {
+    const pubkey = 'a'.repeat(64);
+    cache.set(pubkey, { tipEventId: 'b'.repeat(64), status: 0 });
+    expect(cache.get(pubkey).createdAt).toBe(0);
+  });
 });

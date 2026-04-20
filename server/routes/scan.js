@@ -110,17 +110,22 @@ export default function createScanRouter({ chainTipCache, scanTracker }, opts = 
       });
     }
 
+    // Accidental double-tap by the same steward within 30s. The scan
+    // still returns the correct decision (chain tip hasn't moved) but
+    // we skip stat recording to avoid double-counting.
+    const skipStats = dupCheck?.stewardError === true;
+
     // Chain-tip lookup
     const tip = chainTipCache.get(entry.pubkey);
 
     if (!tip) {
-      scanTracker.recordResult('amber');
+      if (!skipStats) scanTracker.recordResult('amber');
       return respond(res, {
         decision: 'amber',
         sub_state: SUB_STATES.FIRST_VISIT,
         fanPubkey: entry.pubkey,
         entry,
-        extra: { status: 0, firstTime: true },
+        extra: { status: 0, firstTime: true, ...(skipStats ? { doubleTap: true } : {}) },
       });
     }
 
@@ -131,14 +136,14 @@ export default function createScanRouter({ chainTipCache, scanTracker }, opts = 
     else if (tip.status === 1) decision = 'amber';
     else decision = 'green';
 
-    scanTracker.recordResult(decision);
+    if (!skipStats) scanTracker.recordResult(decision);
 
     return respond(res, {
       decision,
       sub_state,
       fanPubkey: entry.pubkey,
       entry,
-      extra: { status: tip.status },
+      extra: { status: tip.status, ...(skipStats ? { doubleTap: true } : {}) },
     });
   });
 

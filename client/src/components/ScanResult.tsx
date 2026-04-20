@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ScanResult as ScanResultType } from '../types';
 import { fetchAndDecryptPhoto } from '../lib/blossom';
 
@@ -22,9 +22,11 @@ export function ScanResult({ result, onDone, onPhotoMismatch, onHoldForOfficer }
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [photoError, setPhotoError] = useState<string | null>(null);
   const [photoLoading, setPhotoLoading] = useState(false);
+  const photoUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!result.blossom || !result.x || !result.photoKey) return;
+    let cancelled = false;
     setPhotoLoading(true);
     fetchAndDecryptPhoto({
       blossomUrl: result.blossom,
@@ -32,17 +34,28 @@ export function ScanResult({ result, onDone, onPhotoMismatch, onHoldForOfficer }
       photoKey: result.photoKey,
     })
       .then(p => {
+        if (cancelled) {
+          URL.revokeObjectURL(p.blobUrl);
+          return;
+        }
+        if (photoUrlRef.current) URL.revokeObjectURL(photoUrlRef.current);
+        photoUrlRef.current = p.blobUrl;
         setPhotoUrl(p.blobUrl);
       })
       .catch(err => {
-        setPhotoError(err.message);
+        if (!cancelled) setPhotoError(err.message);
       })
-      .finally(() => setPhotoLoading(false));
+      .finally(() => {
+        if (!cancelled) setPhotoLoading(false);
+      });
 
     return () => {
-      if (photoUrl) URL.revokeObjectURL(photoUrl);
+      cancelled = true;
+      if (photoUrlRef.current) {
+        URL.revokeObjectURL(photoUrlRef.current);
+        photoUrlRef.current = null;
+      }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [result.blossom, result.x, result.photoKey]);
 
   const crossClubBan =

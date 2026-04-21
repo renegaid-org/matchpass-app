@@ -52,25 +52,51 @@ export function Pair({ status, onStart, onCancel }: Props) {
   if (status.kind === 'waiting') {
     return (
       <div className="fade-in">
+        <div style={{ textAlign: 'center', marginBottom: 20 }}>
+          <img
+            src="/logo.svg"
+            alt="MatchPass"
+            width={72}
+            height={72}
+            style={{ borderRadius: 16, boxShadow: 'var(--shadow)' }}
+          />
+          <h1 style={{ marginTop: 12, color: 'var(--accent)', letterSpacing: '-0.02em' }}>
+            MatchPass
+          </h1>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: 4 }}>
+            Gate steward sign-in
+          </p>
+        </div>
+
         <div className="card" style={{ textAlign: 'center' }}>
-          <h3>Pair with Signet</h3>
+          <h3 style={{ marginBottom: 4 }}>Pair with Signet</h3>
           <p
             style={{
               fontSize: '0.9rem',
               color: 'var(--text-secondary)',
               marginTop: 8,
-              marginBottom: 16,
+              marginBottom: 20,
             }}
           >
             Open Signet on your phone and scan this code.
           </p>
-          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
-            <QRCode value={status.uri} size={256} />
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'center',
+              marginBottom: 16,
+              padding: 12,
+              background: '#FFFFFF',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--border)',
+            }}
+          >
+            <QRCode value={status.uri} size={240} />
           </div>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
             Session: <code>{status.sessionPubkey.slice(0, 12)}…{status.sessionPubkey.slice(-8)}</code>
           </p>
-          <div style={{ display: 'flex', gap: 8, marginTop: 24 }}>
+          <div style={{ marginTop: 20 }}>
             <button className="btn btn-ghost" onClick={onCancel}>
               Cancel
             </button>

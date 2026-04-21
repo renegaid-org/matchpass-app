@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="80" fill="#1a472a"/>
+  <!-- Ticket stub body -->
+  <rect x="86" y="156" width="340" height="200" rx="24" fill="#059669"/>
+  <!-- Left notch -->
+  <circle cx="86" cy="256" r="28" fill="#1a472a"/>
+  <!-- Right notch -->
+  <circle cx="426" cy="256" r="28" fill="#1a472a"/>
+  <!-- Checkmark tick -->
+  <polyline points="192,264 240,312 328,208" fill="none" stroke="#ffffff" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

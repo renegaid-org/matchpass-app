@@ -1,4 +1,12 @@
-/* My Signet — Design System */
+/* MatchPass — Design System
+ *
+ * Brand palette (see matchpass-club and logo-candidates/matchpass-logo.svg):
+ *   --accent / brand green:  pitch-green #166534 (dark emerald, the primary)
+ *   --accent-hover:          deeper      #14532d
+ *   --accent-light:          pale        rgba(34,197,94,0.10)
+ *   --bg-primary (dark):     stadium     #060b14
+ *   success / green vibrant: #22c55e (active state, card-body green)
+ */
 
 /* Reset */
 *, *::before, *::after {
@@ -15,11 +23,11 @@
   --text-primary: #1A1A2E;
   --text-secondary: #6B7280;
   --text-muted: #9CA3AF;
-  --accent: #2563EB;
-  --accent-hover: #1D4ED8;
-  --accent-light: #DBEAFE;
-  --success: #059669;
-  --success-light: #D1FAE5;
+  --accent: #166534;
+  --accent-hover: #14532d;
+  --accent-light: #dcfce7;
+  --success: #16a34a;
+  --success-light: #d1fae5;
   --warning: #D97706;
   --warning-light: #FEF3C7;
   --danger: #DC2626;
@@ -36,7 +44,7 @@
 
   /* Missing variables — referenced in components but never defined */
   --bg-input: #F3F4F6;
-  --accent-text: #1E40AF;
+  --accent-text: #14532d;
 
   /* Spacing scale */
   --space-xs: 4px;
@@ -54,9 +62,9 @@
   --text-primary: #F1F5F9;
   --text-secondary: #94A3B8;
   --text-muted: #64748B;
-  --accent: #3B82F6;
-  --accent-hover: #2563EB;
-  --accent-light: #1E3A5F;
+  --accent: #22c55e;
+  --accent-hover: #16a34a;
+  --accent-light: #14532d;
   --success: #10B981;
   --success-light: #064E3B;
   --warning: #F59E0B;
@@ -71,7 +79,7 @@
   --guardian-light: #451a03;
   --guardian-text: #fbbf24;
   --bg-input: #334155;
-  --accent-text: #93C5FD;
+  --accent-text: #86efac;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -100,7 +108,7 @@
     --guardian-light: #451a03;
     --guardian-text: #fbbf24;
     --bg-input: #334155;
-    --accent-text: #93C5FD;
+    --accent-text: #86efac;
   }
 }
 

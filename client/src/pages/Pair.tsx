@@ -69,7 +69,7 @@ export function Pair({ status, onStart, onCancel }: Props) {
         </div>
 
         <div className="card" style={{ textAlign: 'center' }}>
-          <h3 style={{ marginBottom: 4 }}>Pair with Signet</h3>
+          <h3 style={{ marginBottom: 4 }}>Sign in with Signet</h3>
           <p
             style={{
               fontSize: '0.9rem',
@@ -78,8 +78,29 @@ export function Pair({ status, onStart, onCancel }: Props) {
               marginBottom: 20,
             }}
           >
-            Open Signet on your phone and scan this code.
+            Tap the button if Signet is on this phone, or scan the QR from another device.
           </p>
+
+          <a
+            href={status.uri}
+            className="btn btn-primary btn-lg"
+            style={{ textDecoration: 'none', marginBottom: 16 }}
+          >
+            Open Signet →
+          </a>
+
+          <div
+            style={{
+              fontSize: '0.75rem',
+              color: 'var(--text-muted)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em',
+              margin: '4px 0 12px',
+            }}
+          >
+            — or scan —
+          </div>
+
           <div
             style={{
               display: 'flex',
@@ -93,6 +114,7 @@ export function Pair({ status, onStart, onCancel }: Props) {
           >
             <QRCode value={status.uri} size={240} />
           </div>
+
           <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
             Session: <code>{status.sessionPubkey.slice(0, 12)}…{status.sessionPubkey.slice(-8)}</code>
           </p>

@@ -4,4 +4,5 @@ export const Z = {
   banner: 20,
   modal: 100,
   toast: 200,
+  debug: 9999,
 } as const;

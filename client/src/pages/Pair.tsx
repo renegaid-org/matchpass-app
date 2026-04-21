@@ -1,6 +1,19 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { PairingStatus } from '../lib/nip46';
 import { QRCode } from '../components/QRCode';
+
+/**
+ * Treat small-screen + touch-capable browsers as "can plausibly open Signet".
+ * Desktop browsers have no nostrconnect:// handler and would dump into
+ * xdg-open / "pick an app" dialogs, so we hide the tap-through there and
+ * emphasise the QR (which the desktop user scans from their phone).
+ */
+function canOpenNativeSigner(): boolean {
+  if (typeof window === 'undefined') return false;
+  const touch = navigator.maxTouchPoints > 0;
+  const narrow = window.matchMedia('(max-width: 820px)').matches;
+  return touch && narrow;
+}
 
 interface Props {
   status: PairingStatus;
@@ -10,6 +23,7 @@ interface Props {
 
 export function Pair({ status, onStart, onCancel }: Props) {
   const [busy, setBusy] = useState(false);
+  const showTapThrough = useMemo(() => canOpenNativeSigner(), []);
 
   useEffect(() => {
     if (status.kind === 'idle' && !busy) {
@@ -78,28 +92,34 @@ export function Pair({ status, onStart, onCancel }: Props) {
               marginBottom: 20,
             }}
           >
-            Tap the button if Signet is on this phone, or scan the QR from another device.
+            {showTapThrough
+              ? 'Tap the button if Signet is on this phone, or scan the QR from another device.'
+              : 'Scan this QR with Signet on your phone.'}
           </p>
 
-          <a
-            href={status.uri}
-            className="btn btn-primary btn-lg"
-            style={{ textDecoration: 'none', marginBottom: 16 }}
-          >
-            Open Signet →
-          </a>
+          {showTapThrough && (
+            <>
+              <a
+                href={status.uri}
+                className="btn btn-primary btn-lg"
+                style={{ textDecoration: 'none', marginBottom: 16 }}
+              >
+                Open Signet →
+              </a>
 
-          <div
-            style={{
-              fontSize: '0.75rem',
-              color: 'var(--text-muted)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.1em',
-              margin: '4px 0 12px',
-            }}
-          >
-            — or scan —
-          </div>
+              <div
+                style={{
+                  fontSize: '0.75rem',
+                  color: 'var(--text-muted)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.1em',
+                  margin: '4px 0 12px',
+                }}
+              >
+                — or scan —
+              </div>
+            </>
+          )}
 
           <div
             style={{

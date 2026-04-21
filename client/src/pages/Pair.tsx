@@ -9,8 +9,15 @@ const SIGNET_WEB_URL = 'https://mysignet.app';
  * mysignet.app reads the `nostrconnect` query param on load, runs it through
  * parseNostrConnectURI, and triggers its ApproveConnect flow — working on
  * desktop (no native protocol handler) and mobile (browser opens Signet PWA
- * or web if not installed). The NIP-46 reply still flows back via the relay,
- * so matchpass-app auto-advances to Paired without a redirect-back.
+ * or web if not installed).
+ *
+ * The button that consumes this URL opens Signet in a new tab (target=_blank).
+ * That's load-bearing: matchpass-app's relay subscription on the session
+ * pubkey only stays alive as long as the Pair.tsx page is mounted. If we
+ * navigate the current tab to mysignet.app, the listener dies, and when
+ * Signet publishes the kind-24133 connect response nobody is hearing it.
+ * Opening in a new tab keeps this page alive — user approves in the Signet
+ * tab, matchpass-app receives the event via the relay, pairing completes.
  */
 function signetRedirectUrl(nostrconnectUri: string): string {
   return `${SIGNET_WEB_URL}/?nostrconnect=${encodeURIComponent(nostrconnectUri)}`;
@@ -97,6 +104,8 @@ export function Pair({ status, onStart, onCancel }: Props) {
 
           <a
             href={signetRedirectUrl(status.uri)}
+            target="_blank"
+            rel="noopener noreferrer"
             className="btn btn-primary btn-lg"
             style={{ textDecoration: 'none', marginBottom: 16 }}
           >

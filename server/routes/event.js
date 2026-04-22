@@ -49,7 +49,7 @@ async function withFanLock(fanPubkey, fn) {
   }
 }
 
-export default function createEventRouter({ chainTipCache, rosterCache }) {
+export default function createEventRouter({ chainTipCache, rosterCache, eventAuthorCache }) {
   const router = Router();
 
   router.post('/', async (req, res) => {
@@ -156,6 +156,11 @@ export default function createEventRouter({ chainTipCache, rosterCache }) {
         console.error('Relay publish failed:', err.message);
         return res.status(502).json({ error: 'Relay publish failed' });
       }
+
+      // Record the author synchronously — don't wait for relay round-trip.
+      // An officer who immediately attempts REVIEW_OUTCOME on a card they
+      // just issued would otherwise race the relay re-ingest.
+      eventAuthorCache?.record(event.id, event.pubkey);
 
       // Update cache — derive status from the event kind
       let status = 0; // clean

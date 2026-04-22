@@ -52,7 +52,7 @@ process.on('SIGINT', shutdown);
  * @param {string[]} clubPubkeys - pubkeys of verified clubs
  */
 export async function connectAndSubscribe(relayUrl, caches, clubPubkeys) {
-  const { chainTipCache, rosterCache, reviewRequestCache } = caches;
+  const { chainTipCache, rosterCache, reviewRequestCache, eventAuthorCache } = caches;
 
   // Store for reconnection
   _relayUrl = relayUrl;
@@ -105,7 +105,7 @@ export async function connectAndSubscribe(relayUrl, caches, clubPubkeys) {
   // 2. Fetch existing chain events (canonical + legacy kinds during transition).
   const chainEvents = await collectEvents(relay, [{ kinds: ALL_CHAIN_KINDS }]);
   for (const event of chainEvents) {
-    if (verifyEvent(event)) handleChainEvent(event, chainTipCache, rosterCache);
+    if (verifyEvent(event)) handleChainEvent(event, chainTipCache, rosterCache, eventAuthorCache);
   }
   console.log(`Relay: fetched ${chainEvents.length} chain event(s), ${chainTipCache.size} fan tip(s)`);
 
@@ -120,14 +120,14 @@ export async function connectAndSubscribe(relayUrl, caches, clubPubkeys) {
  * Subscribe to live chain events.
  */
 function subscribeToChainEvents(r, caches) {
-  const { chainTipCache, rosterCache } = caches;
+  const { chainTipCache, rosterCache, eventAuthorCache } = caches;
   // Subscribe to both canonical and legacy kinds during transition window.
   r.subscribe(
     [{ kinds: ALL_CHAIN_KINDS }],
     {
       onevent: (event) => {
         if (!verifyEvent(event)) return;
-        handleChainEvent(event, chainTipCache, rosterCache);
+        handleChainEvent(event, chainTipCache, rosterCache, eventAuthorCache);
         notifyListeners(event);
       },
     }
@@ -228,7 +228,7 @@ async function reconnect(relayUrl) {
       }
       const chainEvents = await collectEvents(relay, [{ kinds: ALL_CHAIN_KINDS }]);
       for (const event of chainEvents) {
-        if (verifyEvent(event)) handleChainEvent(event, _caches.chainTipCache, _caches.rosterCache);
+        if (verifyEvent(event)) handleChainEvent(event, _caches.chainTipCache, _caches.rosterCache, _caches.eventAuthorCache);
       }
       console.log(`Relay: re-synced ${chainEvents.length} chain event(s) after reconnect`);
 
@@ -272,7 +272,7 @@ function collectEvents(relay, filters, timeoutMs = 15000) {
  * Membership events (31900) are signed by the fan — accepted if signature valid.
  * All other events must be signed by a rostered staff member.
  */
-function handleChainEvent(event, chainTipCache, rosterCache) {
+function handleChainEvent(event, chainTipCache, rosterCache, eventAuthorCache) {
   // Only canonical chain kinds (31900-31905) are allowed to mutate state.
   // Legacy kinds (31100-31105) are subscribed to for migration visibility but
   // must never fall through to a status=0 reset — a hostile signer could use
@@ -293,6 +293,10 @@ function handleChainEvent(event, chainTipCache, rosterCache) {
     const staff = rosterCache?.findStaff(event.pubkey);
     if (!staff) return; // Signer not in any club roster — reject silently
   }
+
+  // Record the event's author so verifySignerAuthority can enforce the
+  // self-review prohibition on REVIEW_OUTCOME events (§2.4.3, §4.3).
+  eventAuthorCache?.record(event.id, event.pubkey);
 
   const pTag = event.tags?.find(t => Array.isArray(t) && t[0] === 'p');
   if (!pTag || !pTag[1]) return;

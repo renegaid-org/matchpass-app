@@ -8,6 +8,8 @@ import { ChainTipCache } from './chain-tip-cache.js';
 import { RosterCache } from './roster-cache.js';
 import { ScanTracker } from './scan-tracker.js';
 import { ReviewRequestCache } from './review-request-cache.js';
+import { EventAuthorCache } from './chain/event-author-cache.js';
+import { setEventAuthorLookup } from './chain/verify.js';
 import { ClubDiscovery } from './club-discovery.js';
 import {
   connectAndSubscribe,
@@ -18,7 +20,6 @@ import {
   publishEvent,
 } from './relay.js';
 import { verifyNip98, requireRole } from './auth.js';
-import { hasEventAuthorLookup } from './chain/verify.js';
 
 import createScanRouter from './routes/scan.js';
 import createEventRouter from './routes/event.js';
@@ -36,7 +37,13 @@ const chainTipCache = new ChainTipCache();
 const rosterCache = new RosterCache();
 const scanTracker = new ScanTracker();
 const reviewRequestCache = new ReviewRequestCache();
-const caches = { chainTipCache, rosterCache, scanTracker, reviewRequestCache };
+const eventAuthorCache = new EventAuthorCache();
+const caches = { chainTipCache, rosterCache, scanTracker, reviewRequestCache, eventAuthorCache };
+
+// Wire self-review enforcement: verifySignerAuthority now knows how to look up
+// who authored the event being reviewed. Closes the server-side gap flagged in
+// the 2026-04-20 security audit.
+setEventAuthorLookup((eventId) => eventAuthorCache.getAuthor(eventId));
 
 const app = express();
 
@@ -119,12 +126,6 @@ async function start() {
   await connectAndSubscribe(RELAY_URL, { chainTipCache, rosterCache }, clubPubkeys);
 
   scheduleMidnightClear(scanTracker);
-
-  if (!hasEventAuthorLookup()) {
-    console.warn('WARNING: self-review prohibition is not enforced server-side. '
-      + 'Install an event-author lookup via setEventAuthorLookup(fn) to close '
-      + 'the loophole where an officer signs a REVIEW_OUTCOME for their own event.');
-  }
 
   app.listen(PORT, () => {
     console.log(`matchpass-gate listening on ${PORT}`);

@@ -1,7 +1,7 @@
 // tests/chain/verify.test.js
 
-import { describe, it, expect } from 'vitest';
-import { getCurrentStatus, verifyChain, verifySignerAuthority } from '../../server/chain/verify.js';
+import { describe, it, expect, afterEach } from 'vitest';
+import { getCurrentStatus, verifyChain, verifySignerAuthority, setEventAuthorLookup } from '../../server/chain/verify.js';
 import { EVENT_KINDS, STATUS } from '../../server/chain/types.js';
 
 const fanPubkey = 'f'.repeat(64);
@@ -106,6 +106,69 @@ describe('getCurrentStatus — review outcomes', () => {
       expect(result.authorised).toBe(false);
       expect(result.reason).toMatch(/staff_manager/);
     }
+  });
+
+  describe('verifySignerAuthority self-review block', () => {
+    // Wire and un-wire the lookup hook around the test to avoid leaking
+    // module state into later tests.
+    const authorMap = new Map();
+    afterEach(() => { authorMap.clear(); setEventAuthorLookup(null); });
+
+    const officerPubkey = '9'.repeat(64);
+    const otherOfficerPubkey = '8'.repeat(64);
+    const rosterEvent = {
+      id: 'r1', kind: 31920, pubkey: 'c'.repeat(64), created_at: 1,
+      tags: [
+        ['d', 'staff-roster'],
+        ['p', officerPubkey, 'safety_officer', 'Officer A'],
+        ['p', otherOfficerPubkey, 'safety_officer', 'Officer B'],
+      ],
+      content: '', sig: 'x'.repeat(128),
+    };
+
+    it('rejects a review outcome signed by the same officer who authored the reviewed event', () => {
+      setEventAuthorLookup((id) => authorMap.get(id) ?? null);
+      const cardId = '7'.repeat(64);
+      // Officer A authored the card.
+      authorMap.set(cardId, officerPubkey);
+      // Officer A tries to review their own card.
+      const reviewEvent = mockEvent(EVENT_KINDS.REVIEW_OUTCOME, '6'.repeat(64), [
+        ['p', fanPubkey],
+        ['reviews', cardId],
+        ['outcome', 'dismissed'],
+      ]);
+      reviewEvent.pubkey = officerPubkey;
+      const result = verifySignerAuthority(reviewEvent, rosterEvent);
+      expect(result.authorised).toBe(false);
+      expect(result.reason).toMatch(/Self-review/);
+    });
+
+    it('allows a review outcome signed by a different officer', () => {
+      setEventAuthorLookup((id) => authorMap.get(id) ?? null);
+      const cardId = '5'.repeat(64);
+      authorMap.set(cardId, officerPubkey); // Officer A authored
+      const reviewEvent = mockEvent(EVENT_KINDS.REVIEW_OUTCOME, '4'.repeat(64), [
+        ['p', fanPubkey],
+        ['reviews', cardId],
+        ['outcome', 'dismissed'],
+      ]);
+      reviewEvent.pubkey = otherOfficerPubkey; // Officer B reviews
+      const result = verifySignerAuthority(reviewEvent, rosterEvent);
+      expect(result.authorised).toBe(true);
+    });
+
+    it('allows a review outcome when the cache has no record of the reviewed event (fails open)', () => {
+      setEventAuthorLookup((id) => authorMap.get(id) ?? null);
+      // authorMap intentionally empty — event predates the cache.
+      const reviewEvent = mockEvent(EVENT_KINDS.REVIEW_OUTCOME, '3'.repeat(64), [
+        ['p', fanPubkey],
+        ['reviews', '2'.repeat(64)],
+        ['outcome', 'dismissed'],
+      ]);
+      reviewEvent.pubkey = officerPubkey;
+      const result = verifySignerAuthority(reviewEvent, rosterEvent);
+      expect(result.authorised).toBe(true);
+    });
   });
 
   it('verifyChain returns tip=null when events have invalid signatures', () => {

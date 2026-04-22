@@ -1,7 +1,8 @@
-/** Staff roles — must match credential-chain-spec §5. */
+/** Staff roles — must match credential-chain-spec §5 and server VALID_STAFF_ROLES. */
 export type Role =
   | 'gate_steward'
   | 'roaming_steward'
+  | 'staff_manager'
   | 'safety_officer'
   | 'safeguarding_officer'
   | 'admin';
@@ -49,6 +50,8 @@ export interface StaffEntry {
   role: Role;
   displayName?: string;
   external?: boolean;
+  /** Optional Unix-seconds expiry; null/undefined = permanent. */
+  expiresAt?: number | null;
   clubPubkey: string;
 }
 

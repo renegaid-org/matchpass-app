@@ -21,11 +21,16 @@ export class RosterCache {
   get(clubPubkey) { return this._rosters.get(clubPubkey); }
 
   // Find a staff member by pubkey across ALL clubs.
-  // Returns { pubkey, role, displayName, clubPubkey } or null.
+  // Returns { pubkey, role, displayName, expiresAt, clubPubkey } or null.
+  // Entries whose expires_at is in the past are treated as absent so the
+  // admin does not need to republish the roster to evict temp staff.
   findStaff(staffPubkey) {
+    const now = Math.floor(Date.now() / 1000);
     for (const [clubPubkey, { staff }] of this._rosters) {
       const member = staff.find(s => s.pubkey === staffPubkey);
-      if (member) return { ...member, clubPubkey };
+      if (!member) continue;
+      if (member.expiresAt && member.expiresAt <= now) return null;
+      return { ...member, clubPubkey };
     }
     return null;
   }

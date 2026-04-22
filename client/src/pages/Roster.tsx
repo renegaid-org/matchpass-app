@@ -21,8 +21,32 @@ function sameRoster(a: StaffEntry[], b: StaffEntry[]): boolean {
     if (a[i].pubkey !== b[i].pubkey) return false;
     if (a[i].role !== b[i].role) return false;
     if (a[i].displayName !== b[i].displayName) return false;
+    if ((a[i].expiresAt ?? null) !== (b[i].expiresAt ?? null)) return false;
   }
   return true;
+}
+
+type ExpiryPreset = 'permanent' | 'end_of_day' | 'hours_4' | 'days_2';
+
+function computeExpiresAt(preset: ExpiryPreset): number | null {
+  if (preset === 'permanent') return null;
+  if (preset === 'hours_4') return Math.floor(Date.now() / 1000) + 4 * 3600;
+  if (preset === 'days_2') return Math.floor(Date.now() / 1000) + 2 * 24 * 3600;
+  // end_of_day: 23:59:59 local today
+  const now = new Date();
+  now.setHours(23, 59, 59, 0);
+  return Math.floor(now.getTime() / 1000);
+}
+
+function formatExpiresAt(epoch: number | null | undefined): string {
+  if (!epoch) return 'permanent';
+  const d = new Date(epoch * 1000);
+  const now = Date.now();
+  if (epoch * 1000 < now) return 'expired';
+  const sameDay = new Date().toDateString() === d.toDateString();
+  if (sameDay) return `today ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
+    + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
 export function Roster({ signer, adminPubkey, onBack }: Props) {
@@ -34,6 +58,7 @@ export function Roster({ signer, adminPubkey, onBack }: Props) {
   const [newRole, setNewRole] = useState<StaffRole>('gate_steward');
   const [newName, setNewName] = useState('');
   const [newExternal, setNewExternal] = useState(false);
+  const [newExpiryPreset, setNewExpiryPreset] = useState<ExpiryPreset>('permanent');
 
   useEffect(() => {
     setDraft(staff);
@@ -62,14 +87,16 @@ export function Roster({ signer, adminPubkey, onBack }: Props) {
     const displayName = newExternal && newRole === 'safety_officer'
       ? 'external'
       : newName.slice(0, 100);
+    const expiresAt = computeExpiresAt(newExpiryPreset);
     setDraft(prev => [
       ...prev,
-      { pubkey: newPubkey.trim(), role: newRole, displayName },
+      { pubkey: newPubkey.trim(), role: newRole, displayName, expiresAt },
     ]);
     setNewPubkey('');
     setNewName('');
     setNewRole('gate_steward');
     setNewExternal(false);
+    setNewExpiryPreset('permanent');
   };
 
   const save = async () => {
@@ -108,11 +135,23 @@ export function Roster({ signer, adminPubkey, onBack }: Props) {
         )}
         {draft.map((s, i) => (
           <div className="card" key={s.pubkey} style={{ marginBottom: 8 }}>
-            <div style={{ fontSize: '0.8rem', marginBottom: 4 }}>
-              <code>{s.pubkey.slice(0, 16)}…{s.pubkey.slice(-8)}</code>
-              {s.pubkey === adminPubkey && (
-                <span style={{ color: 'var(--text-muted)', marginLeft: 6 }}>(you)</span>
-              )}
+            <div style={{ fontSize: '0.8rem', marginBottom: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>
+                <code>{s.pubkey.slice(0, 16)}…{s.pubkey.slice(-8)}</code>
+                {s.pubkey === adminPubkey && (
+                  <span style={{ color: 'var(--text-muted)', marginLeft: 6 }}>(you)</span>
+                )}
+              </span>
+              <span style={{
+                fontSize: '0.7rem',
+                fontWeight: 600,
+                padding: '1px 7px',
+                borderRadius: 12,
+                background: s.expiresAt ? 'var(--warning-light)' : 'var(--bg-secondary)',
+                color: s.expiresAt ? 'var(--warning)' : 'var(--text-secondary)',
+              }}>
+                {formatExpiresAt(s.expiresAt)}
+              </span>
             </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               <select
@@ -191,6 +230,23 @@ export function Roster({ signer, adminPubkey, onBack }: Props) {
               Mark as external reviewer (overrides display name)
             </label>
           )}
+          <div style={{ marginTop: 8 }}>
+            <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Expires
+            </label>
+            <select
+              className="input"
+              value={newExpiryPreset}
+              onChange={(e) => setNewExpiryPreset(e.target.value as ExpiryPreset)}
+              disabled={busy}
+              style={{ marginTop: 4 }}
+            >
+              <option value="permanent">Permanent — core staff</option>
+              <option value="end_of_day">End of match day (recommended for temp)</option>
+              <option value="hours_4">4 hours</option>
+              <option value="days_2">2 days (weekend fixtures)</option>
+            </select>
+          </div>
           <button
             className="btn btn-secondary"
             onClick={addRow}

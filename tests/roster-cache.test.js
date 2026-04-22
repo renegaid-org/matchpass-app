@@ -84,4 +84,43 @@ describe('RosterCache', () => {
     expect(cache.clubPubkeys).toContain(clubPubkey);
     expect(cache.clubPubkeys).toContain(secondClub);
   });
+
+  it('findStaff filters entries whose expires_at is in the past', () => {
+    const now = Math.floor(Date.now() / 1000);
+    const tempPubkey = 'e'.repeat(64);
+    const expiredEvent = {
+      ...rosterEvent,
+      id: 'rexp',
+      created_at: now - 3600,
+      tags: [
+        ['d', 'staff-roster'],
+        ['p', staffPubkey, 'gate_steward', 'Alice'],
+        // Temp steward with expires_at 1h in the past
+        ['p', tempPubkey, 'gate_steward', 'Temp Bob', String(now - 1)],
+      ],
+    };
+    cache.set(clubPubkey, expiredEvent);
+    // Alice (no expiry) is still findable
+    expect(cache.findStaff(staffPubkey)).not.toBeNull();
+    // Temp Bob's entry has expired — findStaff returns null
+    expect(cache.findStaff(tempPubkey)).toBeNull();
+  });
+
+  it('findStaff returns entries whose expires_at is in the future', () => {
+    const now = Math.floor(Date.now() / 1000);
+    const tempPubkey = 'e'.repeat(64);
+    const event = {
+      ...rosterEvent,
+      id: 'rfut',
+      created_at: now,
+      tags: [
+        ['d', 'staff-roster'],
+        ['p', tempPubkey, 'gate_steward', 'Temp Bob', String(now + 3600)],
+      ],
+    };
+    cache.set(clubPubkey, event);
+    const found = cache.findStaff(tempPubkey);
+    expect(found).not.toBeNull();
+    expect(found.expiresAt).toBe(now + 3600);
+  });
 });

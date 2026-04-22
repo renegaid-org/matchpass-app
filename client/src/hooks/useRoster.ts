@@ -7,6 +7,7 @@ const API_BASE = '/api/gate';
 export type StaffRole =
   | 'gate_steward'
   | 'roaming_steward'
+  | 'staff_manager'
   | 'safety_officer'
   | 'safeguarding_officer'
   | 'admin';
@@ -15,6 +16,8 @@ export interface StaffEntry {
   pubkey: string;
   role: StaffRole;
   displayName: string;
+  /** Optional Unix-seconds expiry. null = permanent entry. */
+  expiresAt?: number | null;
 }
 
 export function useRoster(signer: Nip98Signer | null) {
@@ -64,7 +67,11 @@ export function useRoster(signer: Nip98Signer | null) {
 
     const tags: string[][] = [['d', 'staff-roster']];
     for (const s of next) {
-      tags.push(['p', s.pubkey, s.role, s.displayName]);
+      const tag = ['p', s.pubkey, s.role, s.displayName];
+      if (s.expiresAt != null && Number.isFinite(s.expiresAt) && s.expiresAt > 0) {
+        tag.push(String(Math.floor(s.expiresAt)));
+      }
+      tags.push(tag);
     }
 
     const template = {
@@ -95,6 +102,7 @@ export function useRoster(signer: Nip98Signer | null) {
 export const STAFF_ROLES: StaffRole[] = [
   'gate_steward',
   'roaming_steward',
+  'staff_manager',
   'safety_officer',
   'safeguarding_officer',
   'admin',

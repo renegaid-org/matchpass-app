@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useFlags, getReviewFanPubkey } from '../hooks/useFlags';
 import type { ReviewRequest } from '../hooks/useFlags';
 import type { Nip98Signer } from '../lib/nip98';
+import { useConfirm } from '../components/ConfirmModal';
 
 type Tab = 'today' | 'reviews' | 'stewards' | 'history';
 
@@ -15,6 +16,7 @@ interface Props {
 export function Dashboard({ signer, onIssueCardForFlag, onOpenReview, onIssueSanction }: Props) {
   const [tab, setTab] = useState<Tab>('today');
   const flags = useFlags(signer);
+  const confirm = useConfirm();
 
   return (
     <div className="fade-in">
@@ -89,8 +91,19 @@ export function Dashboard({ signer, onIssueCardForFlag, onOpenReview, onIssueSan
                 <button
                   className="btn btn-secondary btn-sm"
                   onClick={async () => {
-                    const note = prompt('Reason for dismissal?') || 'Dismissed by officer';
-                    await flags.dismiss(f.id, note);
+                    const { confirmed, input } = await confirm({
+                      title: 'Dismiss duplicate flag?',
+                      message: 'This records a dismissal against the flag (no chain event).',
+                      input: {
+                        placeholder: 'Reason for dismissal (visible to other officers)',
+                        maxLength: 500,
+                        required: true,
+                      },
+                      confirmLabel: 'Dismiss',
+                    });
+                    if (confirmed) {
+                      await flags.dismiss(f.id, (input || '').trim() || 'Dismissed by officer');
+                    }
                   }}
                 >
                   Dismiss

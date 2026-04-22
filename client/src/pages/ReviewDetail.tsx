@@ -9,6 +9,7 @@ import { useChain } from '../hooks/useChain';
 import { useEvent } from '../hooks/useEvent';
 import { reviewOutcomeTemplate } from '../lib/chain';
 import type { NostrEvent } from '../types';
+import { useConfirm } from '../components/ConfirmModal';
 
 interface Props {
   signer: Nip98Signer;
@@ -40,6 +41,7 @@ export function ReviewDetail({ signer, officerPubkey, request, onBack, onResolve
 
   const chain = useChain(signer, fanPubkey);
   const { publish } = useEvent(signer);
+  const confirm = useConfirm();
 
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState('');
@@ -61,6 +63,18 @@ export function ReviewDetail({ signer, officerPubkey, request, onBack, onResolve
       setError('Self-review is blocked — refer to an external reviewer.');
       return;
     }
+    const verb = outcome === 'dismissed' ? 'Dismiss this card' : 'Downgrade red → yellow';
+    const msg = outcome === 'dismissed'
+      ? 'The card will be marked dismissed on the chain. Active cards are recomputed and the fan\'s status may drop.'
+      : 'The red card will be treated as yellow for status computation.';
+    const { confirmed } = await confirm({
+      title: `${verb}?`,
+      message: msg,
+      detail: note.trim() ? `Reasoning: ${note.trim()}` : 'No reasoning note entered — consider adding one before proceeding.',
+      variant: 'warning',
+      confirmLabel: verb,
+    });
+    if (!confirmed) return;
     setBusy(true);
     setError(null);
     try {
@@ -82,14 +96,17 @@ export function ReviewDetail({ signer, officerPubkey, request, onBack, onResolve
     }
   };
 
-  const referExternal = () => {
-    // Pilot behaviour: show a prompt telling the officer to hand off to an
-    // external reviewer. Future work: send an NIP-04 DM to external
-    // reviewers listed on the roster.
-    alert(
-      'This review is for an event you authored. Ask another officer — ' +
-      'ideally one flagged `external` on your club roster — to open and sign this review.'
-    );
+  const referExternal = async () => {
+    // Pilot behaviour: acknowledge and leave the review open for another
+    // officer. Future work: send an NIP-04 DM to external reviewers listed
+    // on the roster.
+    await confirm({
+      title: 'Self-review is blocked',
+      message: 'You authored the event being reviewed — the server will reject a review outcome you sign for it.',
+      detail: 'Ask another officer (ideally one flagged `external` on your club roster) to open and sign this review.',
+      ack: true,
+      confirmLabel: 'Got it',
+    });
   };
 
   if (!fanPubkey || !targetEventId) {
@@ -219,12 +236,14 @@ export function ReviewDetail({ signer, officerPubkey, request, onBack, onResolve
               <button
                 className="btn btn-primary"
                 disabled={busy}
-                onClick={() => {
-                  alert(
-                    'Confirm is a soft decision — no chain event. ' +
-                    'The fan is notified via DM in a later session.'
-                  );
-                  onResolved();
+                onClick={async () => {
+                  const { confirmed } = await confirm({
+                    title: 'Confirm this card?',
+                    message: 'No chain event is written — the card stands.',
+                    detail: 'The fan is notified out of band. A formal DM channel ships in a later milestone.',
+                    confirmLabel: 'Confirm card',
+                  });
+                  if (confirmed) onResolved();
                 }}
               >
                 Confirm (no chain change)

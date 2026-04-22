@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Layout } from './components/Layout';
 import { OfflineBanner } from './components/OfflineBanner';
+import { useConfirm } from './components/ConfirmModal';
 import { useOfflineQueue } from './hooks/useOfflineQueue';
 import { Pair } from './pages/Pair';
 import { Scan } from './pages/Scan';
@@ -22,6 +23,7 @@ const GATE_STORAGE_KEY = 'matchpass.gateId';
 
 export function App() {
   const { ready, status, signer, remotePubkey, startPairing, unpair } = useAuth();
+  const confirm = useConfirm();
   const offline = useOfflineQueue(signer);
   const [page, setPage] = useState<Page>('home');
   const [gateId, setGateId] = useState<string>(() => localStorage.getItem(GATE_STORAGE_KEY) || '');
@@ -188,7 +190,14 @@ export function App() {
         title="MatchPass"
         roleBadge="Steward"
         onSettingsOpen={async () => {
-          if (confirm('Unpair from Signet? This clears incident notes, offline queue, and today\'s stats on this device.')) {
+          const { confirmed } = await confirm({
+            title: 'Unpair from Signet?',
+            message: 'This device will forget your Signet pairing.',
+            detail: 'Incident notes, offline queue, and today\'s stats on this device will be cleared. Your chain events on the relay are unaffected.',
+            variant: 'danger',
+            confirmLabel: 'Unpair and clear',
+          });
+          if (confirmed) {
             localStorage.removeItem(GATE_STORAGE_KEY);
             setGateId('');
             await unpair();

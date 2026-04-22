@@ -14,6 +14,19 @@ export function CameraCard({ onDecode, onError, paused = false }: Props) {
   const [status, setStatus] = useState<'idle' | 'starting' | 'running' | 'error'>('idle');
   const [errMsg, setErrMsg] = useState<string | null>(null);
 
+  // Stabilise fast-changing props so the scanner-start effect does not
+  // re-run when the parent re-renders with a new closure. Without this,
+  // flipping `paused` restarts the scanner and opens a race where the
+  // prior scanner's stop() is still in-flight when the next start() runs
+  // — the camera LED stays on, onDecode may fire for a paused scanner,
+  // and the component accumulates orphan media tracks.
+  const onDecodeRef = useRef(onDecode);
+  const onErrorRef = useRef(onError);
+  const pausedRef = useRef(paused);
+  useEffect(() => { onDecodeRef.current = onDecode; }, [onDecode]);
+  useEffect(() => { onErrorRef.current = onError; }, [onError]);
+  useEffect(() => { pausedRef.current = paused; }, [paused]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -32,8 +45,9 @@ export function CameraCard({ onDecode, onError, paused = false }: Props) {
             qrbox: (w, h) => ({ width: Math.min(w, h) * 0.8, height: Math.min(w, h) * 0.8 }),
           },
           (decoded) => {
-            if (cancelled || paused) return;
-            onDecode(decoded);
+            // Read pause state via ref at decode-time, not via stale closure.
+            if (cancelled || pausedRef.current) return;
+            onDecodeRef.current(decoded);
           },
           // ignore per-frame decode failures
           () => {},
@@ -43,21 +57,42 @@ export function CameraCard({ onDecode, onError, paused = false }: Props) {
         const msg = (err as Error).message || 'Camera failed to start';
         setErrMsg(msg);
         setStatus('error');
-        onError?.(msg);
+        onErrorRef.current?.(msg);
       }
     }
+
+    // Stop scanning when the tab is hidden so the camera LED turns off and
+    // the hardware is released for other apps. Restart on re-show.
+    let hiddenDuringThisRun = false;
+    const onVisibility = () => {
+      const scanner = scannerRef.current;
+      if (document.hidden && scanner && status !== 'idle') {
+        hiddenDuringThisRun = true;
+        scanner.stop().catch(() => {}).finally(() => { scanner.clear(); });
+        scannerRef.current = null;
+        setStatus('idle');
+      } else if (!document.hidden && hiddenDuringThisRun) {
+        hiddenDuringThisRun = false;
+        start();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
 
     start();
 
     return () => {
       cancelled = true;
+      document.removeEventListener('visibilitychange', onVisibility);
       const scanner = scannerRef.current;
       if (scanner) {
         scanner.stop().catch(() => {}).finally(() => scanner.clear());
       }
       scannerRef.current = null;
     };
-  }, [onDecode, onError, paused]);
+    // Intentionally empty dep array — camera lifecycle is owned by this
+    // mount; prop changes are plumbed through refs above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div

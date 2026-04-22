@@ -5,6 +5,7 @@ import {
   deleteUnlinkedIncident,
   type UnlinkedIncidentRecord,
 } from '../lib/db';
+import { useConfirm } from '../components/ConfirmModal';
 
 const CATEGORIES = [
   'disorder',
@@ -46,6 +47,7 @@ function downloadJson(records: UnlinkedIncidentRecord[]) {
 }
 
 export function UnlinkedIncident({ onBack }: { onBack: () => void }) {
+  const confirm = useConfirm();
   const [list, setList] = useState<UnlinkedIncidentRecord[]>([]);
   const [desc, setDesc] = useState('');
   const [category, setCategory] = useState<string>(CATEGORIES[0]);
@@ -69,12 +71,15 @@ export function UnlinkedIncident({ onBack }: { onBack: () => void }) {
     setBusy(true);
     setError(null);
     try {
+      // Safeguarding rule: suspected-age notes are always stored text-only.
+      // Even if a photo was attached before the category changed, drop it on save.
+      const safePhoto = category === 'suspected-age' ? undefined : photoDataUrl;
       await addUnlinkedIncident({
         id: uuid(),
         description: desc.trim(),
         category,
         time: Date.now(),
-        photoDataUrl,
+        photoDataUrl: safePhoto,
       });
       setDesc('');
       setCategory(CATEGORIES[0]);
@@ -103,7 +108,13 @@ export function UnlinkedIncident({ onBack }: { onBack: () => void }) {
   };
 
   const remove = async (id: string) => {
-    if (!confirm('Delete this incident note?')) return;
+    const { confirmed } = await confirm({
+      title: 'Delete incident note?',
+      message: 'The note is on this device only; deletion is permanent.',
+      variant: 'danger',
+      confirmLabel: 'Delete',
+    });
+    if (!confirmed) return;
     await deleteUnlinkedIncident(id);
     await refresh();
   };
@@ -144,10 +155,29 @@ export function UnlinkedIncident({ onBack }: { onBack: () => void }) {
               accept="image/*"
               capture="environment"
               onChange={onFile}
-              disabled={busy}
+              disabled={busy || category === 'suspected-age'}
             />
           </div>
-          {photoDataUrl && (
+          {category === 'suspected-age' && (
+            <div
+              role="alert"
+              style={{
+                background: 'var(--warning-light)',
+                border: '1px solid var(--warning)',
+                borderRadius: 'var(--radius-sm)',
+                padding: '10px 12px',
+                marginTop: 8,
+                fontSize: '0.85rem',
+                color: 'var(--text-primary)',
+              }}
+            >
+              <strong style={{ color: 'var(--warning)' }}>Safeguarding notice.</strong>{' '}
+              Do not attach a photo of a suspected minor. Record the incident
+              verbally to your safeguarding officer and keep this note text-only.
+              Photo upload is disabled for this category.
+            </div>
+          )}
+          {photoDataUrl && category !== 'suspected-age' && (
             <img
               src={photoDataUrl}
               alt="Attached"

@@ -3,6 +3,7 @@ import type { Nip98Signer } from '../lib/nip98';
 import { useChain } from '../hooks/useChain';
 import { useEvent } from '../hooks/useEvent';
 import { sanctionTemplate } from '../lib/chain';
+import { useConfirm } from '../components/ConfirmModal';
 
 interface Props {
   signer: Nip98Signer;
@@ -24,6 +25,7 @@ function sixMonthsOut() {
 export function SanctionIssue({ signer, fanPubkey, onBack, onDone }: Props) {
   const chain = useChain(signer, fanPubkey);
   const { publish } = useEvent(signer);
+  const confirm = useConfirm();
 
   const [sanctionType, setSanctionType] = useState<'suspension' | 'ban'>('suspension');
   const [reason, setReason] = useState('');
@@ -66,6 +68,23 @@ export function SanctionIssue({ signer, fanPubkey, onBack, onDone }: Props) {
       setError('End date must be on or after start date.');
       return;
     }
+
+    const isBan = sanctionType === 'ban';
+    const verb = isBan ? 'Publish ban' : 'Publish suspension';
+    const effectiveLabel = endMode === 'indefinite' ? 'indefinite' : `until ${endDate}`;
+    const { confirmed } = await confirm({
+      title: isBan
+        ? `Ban this fan ${effectiveLabel}?`
+        : `Suspend this fan ${effectiveLabel}?`,
+      message: isBan
+        ? 'Bans deny the fan entry at every participating club until the sanction ends or is reviewed. Chain writes are permanent.'
+        : 'Suspensions deny entry for the configured period. Chain writes are permanent.',
+      detail: `From ${startDate} · ${effectiveLabel} · Reason: "${reason.trim().slice(0, 160)}${reason.length > 160 ? '…' : ''}"`,
+      variant: 'danger',
+      requireType: isBan ? 'BAN' : undefined,
+      confirmLabel: verb,
+    });
+    if (!confirmed) return;
 
     setBusy(true);
     setError(null);

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { cardTemplate, CARD_CATEGORIES, type CardCategory } from '../lib/chain';
 import { useEvent } from '../hooks/useEvent';
 import type { Nip98Signer } from '../lib/nip98';
+import { useConfirm } from '../components/ConfirmModal';
 
 interface Props {
   signer: Nip98Signer;
@@ -11,6 +12,7 @@ interface Props {
 
 export function CardIssue({ signer, fanPubkey, onDone }: Props) {
   const { publish } = useEvent(signer);
+  const confirm = useConfirm();
   const [cardType, setCardType] = useState<'yellow' | 'red'>('yellow');
   const [category, setCategory] = useState<CardCategory>('other');
   const [notes, setNotes] = useState('');
@@ -20,6 +22,21 @@ export function CardIssue({ signer, fanPubkey, onDone }: Props) {
   const [done, setDone] = useState<string | null>(null);
 
   async function submit() {
+    // Chain writes are immutable. Red cards trigger a typed confirmation;
+    // yellows prompt but don't require typing.
+    const isRed = cardType === 'red';
+    const { confirmed } = await confirm({
+      title: isRed ? 'Issue a RED card?' : 'Issue a yellow card?',
+      message: isRed
+        ? 'Red cards count toward sanctions and remain on the fan\'s chain for 24 months. This is published to the chain and cannot be undone — only reviewed.'
+        : 'Yellow cards remain on the fan\'s chain for 12 months. Published to the chain; can only be dismissed by a safety officer at review.',
+      detail: `Category: ${category.replace('-', ' ')} · Match ${matchDate}${notes ? ` · "${notes.slice(0, 120)}${notes.length > 120 ? '…' : ''}"` : ''}`,
+      variant: isRed ? 'danger' : 'warning',
+      requireType: isRed ? 'RED' : undefined,
+      confirmLabel: isRed ? 'Publish red card' : 'Publish yellow card',
+    });
+    if (!confirmed) return;
+
     setBusy(true);
     setError(null);
     try {

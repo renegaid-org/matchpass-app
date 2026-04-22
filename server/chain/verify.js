@@ -126,6 +126,16 @@ export function verifySignerAuthority(event, staffRosterEvent) {
   // the roster entry to signing review outcomes only (no cards / sanctions).
   const isExternal = staffEntry[3] === 'external';
 
+  // staff_manager is an administrative tier (ADR 2026-04-21). It has no
+  // authority to sign any chain event kind — only kind 31920 roster events
+  // via the dedicated route guard in Phase 2. Reject explicitly up front.
+  if (role === 'staff_manager') {
+    return {
+      authorised: false,
+      reason: 'staff_manager cannot sign chain events (administrative role only)',
+    };
+  }
+
   // Cards require roaming_steward or above (safety_officer,
   // safeguarding_officer, admin). Externals cannot sign cards.
   if (event.kind === EVENT_KINDS.CARD) {

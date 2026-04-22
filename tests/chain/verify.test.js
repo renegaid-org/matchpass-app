@@ -1,7 +1,7 @@
 // tests/chain/verify.test.js
 
 import { describe, it, expect } from 'vitest';
-import { getCurrentStatus, verifyChain } from '../../server/chain/verify.js';
+import { getCurrentStatus, verifyChain, verifySignerAuthority } from '../../server/chain/verify.js';
 import { EVENT_KINDS, STATUS } from '../../server/chain/types.js';
 
 const fanPubkey = 'f'.repeat(64);
@@ -82,6 +82,30 @@ describe('getCurrentStatus — review outcomes', () => {
     expect(result.status).toBe(STATUS.RED);
     expect(result.statusName).toBe('red');
     expect(result.activeCards).toHaveLength(2);
+  });
+
+  it('verifySignerAuthority rejects staff_manager for every event kind', () => {
+    // Phase 1: role exists in vocabulary but must not sign chain events.
+    const mgrPubkey = '5'.repeat(64);
+    const rosterEvent = {
+      id: 'r1', kind: 31920, pubkey: 'c'.repeat(64), created_at: 1,
+      tags: [
+        ['d', 'staff-roster'],
+        ['p', mgrPubkey, 'staff_manager', 'Club Secretary'],
+      ],
+      content: '', sig: 'x'.repeat(128),
+    };
+    const kindsToTry = [
+      EVENT_KINDS.MEMBERSHIP, EVENT_KINDS.GATE_LOCK, EVENT_KINDS.ATTENDANCE,
+      EVENT_KINDS.CARD, EVENT_KINDS.SANCTION, EVENT_KINDS.REVIEW_OUTCOME,
+    ];
+    for (const kind of kindsToTry) {
+      const event = mockEvent(kind, '1'.repeat(64), [['p', fanPubkey]]);
+      event.pubkey = mgrPubkey;
+      const result = verifySignerAuthority(event, rosterEvent);
+      expect(result.authorised).toBe(false);
+      expect(result.reason).toMatch(/staff_manager/);
+    }
   });
 
   it('verifyChain returns tip=null when events have invalid signatures', () => {

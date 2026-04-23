@@ -7,6 +7,9 @@ export class ScanTracker {
     this._admissions = new Map(); // fanPubkey -> { gate, time, staffId }
     this._duplicateFlags = [];
     this._stats = { green: 0, amber: 0, red: 0 };
+    // Per-staff breakdown for the Stewards dashboard tab (§4.5.4).
+    // Map<staffId, { green, amber, red }>. Cleared at midnight with the rest.
+    this._byStaff = new Map();
   }
 
   // Check for duplicate admission and record this scan.
@@ -50,8 +53,28 @@ export class ScanTracker {
     return true;
   }
 
-  recordResult(decision) {
-    if (this._stats[decision] !== undefined) this._stats[decision]++;
+  recordResult(decision, staffId = null) {
+    if (this._stats[decision] === undefined) return;
+    this._stats[decision]++;
+    if (staffId && staffId !== 'anonymous') {
+      const s = this._byStaff.get(staffId) || { green: 0, amber: 0, red: 0 };
+      s[decision]++;
+      this._byStaff.set(staffId, s);
+    }
+  }
+
+  /** Per-staff breakdown, keyed by staff pubkey. */
+  getStaffStats(staffId) {
+    return this._byStaff.get(staffId) || { green: 0, amber: 0, red: 0 };
+  }
+
+  /** [{ staffId, green, amber, red, total }] across all staff who scanned today. */
+  listStaffStats() {
+    return [...this._byStaff.entries()].map(([staffId, s]) => ({
+      staffId,
+      ...s,
+      total: s.green + s.amber + s.red,
+    }));
   }
 
   getStats() {
@@ -66,5 +89,6 @@ export class ScanTracker {
     this._admissions.clear();
     this._duplicateFlags = [];
     this._stats = { green: 0, amber: 0, red: 0 };
+    this._byStaff.clear();
   }
 }

@@ -29,6 +29,7 @@ import createFlagsRouter from './routes/flags.js';
 import createChainRouter from './routes/chain.js';
 import createSubscribeRouter from './routes/subscribe.js';
 import createRosterRouter from './routes/roster.js';
+import createStaffRouter from './routes/staff.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -101,6 +102,8 @@ app.use('/api/gate/dashboard', auth, requireRole('safety_officer', 'admin'), cre
 app.use('/api/gate/flags', auth, requireRole('safety_officer', 'safeguarding_officer', 'admin'), createFlagsRouter(caches));
 app.use('/api/gate/subscribe', auth, createSubscribeRouter({ subscribeToLiveEvents }));
 app.use('/api/gate/roster', auth, requireRole('admin'), createRosterRouter({ rosterCache, publishEvent }));
+// Officer-accessible read-only view of the roster + today's scan stats.
+app.use('/api/gate/staff', auth, requireRole('safety_officer', 'safeguarding_officer', 'admin'), createStaffRouter({ rosterCache, scanTracker }));
 
 // Error handler
 app.use((err, req, res, next) => {

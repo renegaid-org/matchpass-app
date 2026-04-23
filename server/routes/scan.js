@@ -101,7 +101,7 @@ export default function createScanRouter({ chainTipCache, scanTracker }, opts = 
     const dupCheck = scanTracker.checkAndRecord(entry.pubkey, gate, staffId);
 
     if (dupCheck?.duplicate) {
-      scanTracker.recordResult('red');
+      scanTracker.recordResult('red', staffId);
       return respond(res, {
         decision: 'red',
         sub_state: SUB_STATES.DUPLICATE_ADMISSION,
@@ -120,7 +120,7 @@ export default function createScanRouter({ chainTipCache, scanTracker }, opts = 
     const tip = chainTipCache.get(entry.pubkey);
 
     if (!tip) {
-      if (!skipStats) scanTracker.recordResult('amber');
+      if (!skipStats) scanTracker.recordResult('amber', staffId);
       return respond(res, {
         decision: 'amber',
         sub_state: SUB_STATES.FIRST_VISIT,
@@ -137,7 +137,7 @@ export default function createScanRouter({ chainTipCache, scanTracker }, opts = 
     else if (tip.status === 1) decision = 'amber';
     else decision = 'green';
 
-    if (!skipStats) scanTracker.recordResult(decision);
+    if (!skipStats) scanTracker.recordResult(decision, staffId);
 
     return respond(res, {
       decision,

@@ -151,6 +151,52 @@ export function createInviteCache({ now = () => Math.floor(Date.now() / 1000) } 
     bySessionPubkey.clear();
   }
 
+  // Snapshot of accepted invites for a club. Returns a fresh array so the
+  // caller can iterate without worrying about concurrent state-transitions
+  // (e.g. consumeByTokenHash) mutating the underlying byTokenHash map.
+  function acceptedInvitesForClub(clubPubkey) {
+    const out = [];
+    for (const [hash, rec] of byTokenHash) {
+      if (rec.status === 'accepted' && rec.club_pubkey === clubPubkey) {
+        out.push({ token_hash: hash, persona_pubkey: rec.persona_pubkey });
+      }
+    }
+    return out;
+  }
+
+  // Same semantics as consume() but works from a token hash. Used by the
+  // /api/gate/event roster-publish hook, which only knows hashes (the
+  // plaintext invite token isn't available at consume time).
+  function consumeByTokenHash(tokenHash, rosterEventId) {
+    const rec = byTokenHash.get(tokenHash);
+    if (!rec) throw new Error('invite not found');
+    if (rec.status !== 'accepted') throw new Error('invite not accepted');
+    rec.status = 'consumed';
+    rec.roster_event_id = rosterEventId;
+    rec.session_privkey = '00'.repeat(32);  // wipe
+    byChallenge.delete(rec.auth_challenge);
+    bySessionPubkey.delete(rec.session_pubkey);
+    emit(tokenHash, { type: 'consumed', roster_event_id: rosterEventId });
+  }
+
+  // Public summary used by /api/gate/invites/accepted (Task 15). Returns a
+  // plain object — never the live record — so callers can't mutate cache
+  // state. Includes token_hash so the caller can correlate with SSE events.
+  function detailByTokenHash(tokenHash) {
+    const rec = byTokenHash.get(tokenHash);
+    if (!rec) return null;
+    return {
+      token_hash: tokenHash,
+      club_pubkey: rec.club_pubkey,
+      role: rec.role,
+      display_name: rec.display_name,
+      persona_pubkey: rec.persona_pubkey,
+      accepted_at: rec.accepted_at,
+      staff_expires_at: rec.staff_expires_at,
+      status: rec.status,
+    };
+  }
+
   function acceptBySessionPubkey(sessionPubkey, personaPubkey) {
     const tokenHash = bySessionPubkey.get(sessionPubkey);
     if (!tokenHash) return null;
@@ -186,6 +232,9 @@ export function createInviteCache({ now = () => Math.floor(Date.now() / 1000) } 
     accept,
     acceptBySessionPubkey,
     consume,
+    consumeByTokenHash,
+    acceptedInvitesForClub,
+    detailByTokenHash,
     cancel,
     pruneExpired,
     clearAll,

@@ -17,8 +17,30 @@ function makeApp({ inviterRole = 'admin' } = {}) {
     };
     next();
   });
-  app.use('/api/gate/invites', createInvitesRouter({ cache, onMint, gateHost: 'https://gate.matchpass.club' }));
+  const { apiRouter, acceptRouter } = createInvitesRouter({
+    cache,
+    onMint,
+    gateHost: 'https://gate.matchpass.club',
+  });
+  app.use('/api/gate/invites', apiRouter);
+  // /staff/accept is publicly reachable in production (it's the post-auth
+  // redirect target), so we mount the acceptRouter at root without the
+  // staff-stub middleware. That middleware still runs on the request because
+  // it's mounted earlier — but the accept handler intentionally ignores it.
+  app.use('/', acceptRouter);
   return { app, cache, onMint };
+}
+
+async function getText(app, path) {
+  const server = app.listen(0);
+  const port = server.address().port;
+  try {
+    const res = await fetch(`http://localhost:${port}${path}`);
+    const text = await res.text();
+    return { status: res.status, text };
+  } finally {
+    server.close();
+  }
 }
 
 async function post(app, path, body) {
@@ -196,5 +218,45 @@ describe('POST /api/gate/invites', () => {
     const { app } = makeApp({ inviterRole: 'gate_steward' });
     const { status } = await post(app, '/api/gate/invites', { role: 'gate_steward' });
     expect(status).toBe(403);
+  });
+});
+
+describe('GET /staff/accept', () => {
+  it('renders the accepted confirmation page once the invite has been accepted', async () => {
+    const { app, cache } = makeApp();
+    // Mint via the route so the token round-trips through real wiring; then
+    // accept server-side by simulating the relay-handler callback.
+    const mintRes = await post(app, '/api/gate/invites', {
+      role: 'gate_steward',
+      display_name: 'Marcus',
+    });
+    expect(mintRes.status).toBe(201);
+    const token = mintRes.body.invite_token;
+    const rec = cache.getByTokenWithSecrets(token);
+    cache.acceptBySessionPubkey(rec.session_pubkey, 'cc'.repeat(32));
+
+    const res = await getText(app, `/staff/accept?invite=${token}`);
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('Accepted');
+    expect(res.text).toContain('Marcus');
+    expect(res.text).toContain('gate steward'); // role label, underscore stripped
+    expect(res.text).toContain('cc'.repeat(32)); // persona shown
+    expect(res.text).toContain('replaceState'); // URL scrub script present
+  });
+
+  it('renders the pending page while the invite is still awaiting sign-in', async () => {
+    const { app } = makeApp();
+    const mintRes = await post(app, '/api/gate/invites', { role: 'gate_steward' });
+    expect(mintRes.status).toBe(201);
+    const res = await getText(app, `/staff/accept?invite=${mintRes.body.invite_token}`);
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('Awaiting');
+  });
+
+  it('returns 410 with an expired-invite page for unknown / malformed tokens', async () => {
+    const { app } = makeApp();
+    const res = await getText(app, '/staff/accept?invite=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx');
+    expect(res.status).toBe(410);
+    expect(res.text).toContain('expired');
   });
 });

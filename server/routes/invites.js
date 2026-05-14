@@ -1,8 +1,13 @@
-// server/routes/invites.js — Staff QR invite mint endpoint
-// POST /api/gate/invites mints an invite record (via the in-memory invite
-// cache) and returns a QR-ready Signet auth URL. The SSE subscription and
-// /staff/accept routes are added in subsequent tasks; this file currently
-// owns only the mint path.
+// server/routes/invites.js — Staff QR invite mint endpoint + accept page.
+//
+// Exposes two Express Routers:
+//   apiRouter    — POST /  and GET /:token/subscribe
+//                  (mounted at /api/gate/invites behind NIP-98 auth)
+//   acceptRouter — GET /staff/accept
+//                  (mounted at root, publicly reachable — this is the
+//                  redirect target after a Signet auth in the QR flow,
+//                  and the fan/steward arriving here is not yet a known
+//                  staff member from the gate's perspective).
 
 import { Router } from 'express';
 import { createHash } from 'crypto';
@@ -37,9 +42,10 @@ function buildQrPayload({ gateHost, inviteToken, sessionPubkey, authChallenge })
 }
 
 export default function createInvitesRouter({ cache, onMint = () => {}, gateHost }) {
-  const router = Router();
+  const apiRouter = Router();
+  const acceptRouter = Router();
 
-  router.post('/', (req, res) => {
+  apiRouter.post('/', (req, res) => {
     const { role, staff_expires_at, display_name } = req.body || {};
     if (!role) return res.status(400).json({ error: 'role required' });
 
@@ -99,7 +105,7 @@ export default function createInvitesRouter({ cache, onMint = () => {}, gateHost
   // member trying to watch another club's invite) with 403, and reject
   // unknown tokens with 404 so a malicious caller can't probe for valid
   // invite tokens by status code.
-  router.get('/:token/subscribe', (req, res) => {
+  apiRouter.get('/:token/subscribe', (req, res) => {
     const { token } = req.params;
     const rec = cache.getByToken(token);
     if (!rec) return res.status(404).json({ error: 'invite not found' });
@@ -151,5 +157,114 @@ export default function createInvitesRouter({ cache, onMint = () => {}, gateHost
     });
   });
 
-  return router;
+  // GET /staff/accept — Public landing page reached after a successful
+  // Signet auth via the minted QR's `post=` parameter. The token in the
+  // query string is the plaintext invite token (one-time, short-lived);
+  // it's used purely to look up the cache record and decide which static
+  // HTML state to render. The inline <script> scrubs the token from the
+  // browser URL so it can't leak via referer / shoulder-surf / history.
+  acceptRouter.get('/staff/accept', (req, res) => {
+    const token = req.query.invite;
+    if (!token || typeof token !== 'string') {
+      return res
+        .status(410)
+        .type('html')
+        .send(renderError('This invite link is malformed or expired.'));
+    }
+    const rec = cache.getByToken(token);
+    if (!rec) {
+      return res
+        .status(410)
+        .type('html')
+        .send(
+          renderError(
+            'This invite is expired or has already been used. Ask your manager to send a new one.',
+          ),
+        );
+    }
+    if (rec.status === 'consumed') {
+      return res
+        .status(410)
+        .type('html')
+        .send(renderError('This invite has already been used.'));
+    }
+    if (rec.status === 'accepted') {
+      return res
+        .status(200)
+        .type('html')
+        .send(
+          renderAccepted({
+            displayName: rec.display_name,
+            personaPubkey: rec.persona_pubkey,
+            role: rec.role,
+          }),
+        );
+    }
+    return res.status(200).type('html').send(renderPending());
+  });
+
+  return { apiRouter, acceptRouter };
+}
+
+// --- Inline HTML helpers -----------------------------------------------------
+//
+// Kept as plain string-builders rather than a templating library — these are
+// three small static pages with zero loops and the brand styling is intended
+// to match the MatchPass planning site (#2d6a4f primary, #1a472a dark, Georgia
+// headings). The replaceState script in the shell strips the `?invite=…`
+// query from the URL after render so the token can't leak via referer or
+// browser history.
+
+function renderShell(body) {
+  return `<!doctype html><html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MatchPass</title>
+<style>
+body { font-family: -apple-system, system-ui, sans-serif; max-width: 480px; margin: 2rem auto; padding: 0 1.25rem; color: #1a472a; }
+h1 { font-family: Georgia, serif; color: #1a472a; }
+.card { padding: 1.5rem; border: 2px solid #2d6a4f; border-radius: 8px; }
+.muted { color: #666; font-size: 0.875rem; }
+.persona { font-family: monospace; font-size: 0.875rem; background: #f0f4f1; padding: 0.5rem; border-radius: 4px; word-break: break-all; display: inline-block; }
+</style>
+</head><body>${body}<script>history.replaceState({}, '', window.location.pathname);</script></body></html>`;
+}
+
+function renderAccepted({ displayName, personaPubkey, role }) {
+  const greeting = displayName ? `Welcome, ${escapeHtml(displayName)}.` : 'Welcome.';
+  const roleLabel = escapeHtml(String(role || '').replace(/_/g, ' '));
+  return renderShell(`
+    <h1>Accepted</h1>
+    <div class="card">
+      <p>${greeting}</p>
+      <p>You've been signed in as <strong>${roleLabel}</strong>. Your manager will add you to the roster.</p>
+      <p class="muted">Persona: <code class="persona">${escapeHtml(personaPubkey || '')}</code></p>
+    </div>
+  `);
+}
+
+function renderPending() {
+  return renderShell(`
+    <h1>Awaiting sign-in</h1>
+    <div class="card">
+      <p>This invite is ready, but no one has signed in yet. If you just scanned the QR, complete the approval in your Signet app.</p>
+    </div>
+  `);
+}
+
+function renderError(msg) {
+  return renderShell(`
+    <h1>Invite expired</h1>
+    <div class="card"><p>${escapeHtml(msg)}</p></div>
+  `);
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[c]));
 }

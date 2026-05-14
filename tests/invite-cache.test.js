@@ -108,3 +108,47 @@ describe('inviteCache transitions', () => {
     expect(cache.activeSessionPubkeys()).toHaveLength(0);
   });
 });
+
+describe('inviteCache.checkAuthority', () => {
+  let cache;
+  beforeEach(() => { cache = createInviteCache(); });
+
+  it('admin can invite any role with any expires_at', () => {
+    expect(() => cache.checkAuthority({ inviterRole: 'admin', invitedRole: 'safety_officer' })).not.toThrow();
+    expect(() => cache.checkAuthority({ inviterRole: 'admin', invitedRole: 'admin' })).not.toThrow();
+  });
+
+  it('staff_manager can only invite gate_steward', () => {
+    expect(() => cache.checkAuthority({
+      inviterRole: 'staff_manager',
+      invitedRole: 'gate_steward',
+      staffExpiresAt: Math.floor(Date.now() / 1000) + 3600,
+    })).not.toThrow();
+    expect(() => cache.checkAuthority({
+      inviterRole: 'staff_manager',
+      invitedRole: 'roaming_steward',
+      staffExpiresAt: Math.floor(Date.now() / 1000) + 3600,
+    })).toThrow(/staff_manager can only invite gate_steward/);
+  });
+
+  it('staff_manager requires staffExpiresAt ≤ now + 86400', () => {
+    const tooFar = Math.floor(Date.now() / 1000) + 86401;
+    expect(() => cache.checkAuthority({
+      inviterRole: 'staff_manager',
+      invitedRole: 'gate_steward',
+      staffExpiresAt: tooFar,
+    })).toThrow(/within 24 hours/);
+  });
+
+  it('staff_manager rejects missing staffExpiresAt', () => {
+    expect(() => cache.checkAuthority({
+      inviterRole: 'staff_manager',
+      invitedRole: 'gate_steward',
+    })).toThrow(/staffExpiresAt required/);
+  });
+
+  it('other roles cannot invite at all', () => {
+    expect(() => cache.checkAuthority({ inviterRole: 'gate_steward', invitedRole: 'gate_steward' })).toThrow(/cannot invite/);
+    expect(() => cache.checkAuthority({ inviterRole: 'safety_officer', invitedRole: 'gate_steward' })).toThrow(/cannot invite/);
+  });
+});

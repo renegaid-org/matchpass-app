@@ -10,6 +10,7 @@ import { bytesToHex } from '@noble/hashes/utils.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 
 const PENDING_TTL_S = 15 * 60;
+const TWENTY_FOUR_HOURS = 24 * 60 * 60;
 
 function hashToken(token) {
   return bytesToHex(sha256(new TextEncoder().encode(token)));
@@ -18,6 +19,23 @@ function hashToken(token) {
 function urlSafeRandomToken() {
   // 24 random bytes → 32-char URL-safe base64 (no padding)
   return randomBytes(24).toString('base64url');
+}
+
+export function checkAuthority({ inviterRole, invitedRole, staffExpiresAt, now = Math.floor(Date.now() / 1000) }) {
+  if (inviterRole === 'admin') return;
+  if (inviterRole === 'staff_manager') {
+    if (invitedRole !== 'gate_steward') {
+      throw new Error('staff_manager can only invite gate_steward');
+    }
+    if (staffExpiresAt == null) {
+      throw new Error('staffExpiresAt required when inviter is staff_manager');
+    }
+    if (staffExpiresAt > now + TWENTY_FOUR_HOURS) {
+      throw new Error('staff_manager invites must expire within 24 hours');
+    }
+    return;
+  }
+  throw new Error(`role ${inviterRole} cannot invite`);
 }
 
 export function createInviteCache({ now = () => Math.floor(Date.now() / 1000) } = {}) {
@@ -137,5 +155,6 @@ export function createInviteCache({ now = () => Math.floor(Date.now() / 1000) } 
     cancel,
     pruneExpired,
     clearAll,
+    checkAuthority,
   };
 }

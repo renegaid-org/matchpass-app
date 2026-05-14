@@ -12,6 +12,7 @@
 import { Router } from 'express';
 import { createHash } from 'crypto';
 import { checkAuthority } from '../invite-cache.js';
+import { buildSubscribeCookieHeader, verifySubscribeCookie } from '../auth.js';
 
 const RELAY_URL = process.env.RELAY_URL || 'wss://relay.trotters.cc';
 
@@ -41,11 +42,24 @@ function buildQrPayload({ gateHost, inviteToken, sessionPubkey, authChallenge })
   return url.toString();
 }
 
-export default function createInvitesRouter({ cache, onMint = () => {}, gateHost }) {
+export default function createInvitesRouter({
+  cache,
+  onMint = () => {},
+  gateHost,
+  // Optional NIP-98 middleware. When provided, Task 11's wiring layer passes
+  // it in and we apply it directly to the routes that need it (POST mint, and
+  // SSE when no valid cookie is present). When omitted (tests / current
+  // pre-wiring state) we assume some upstream middleware has already
+  // populated req.staff — that's the previous contract and we preserve it.
+  verifyNip98Middleware = null,
+} = {}) {
   const apiRouter = Router();
   const acceptRouter = Router();
 
-  apiRouter.post('/', (req, res) => {
+  // POST / always requires NIP-98 — there's no cookie path for minting.
+  const nip98 = verifyNip98Middleware || ((_req, _res, next) => next());
+
+  apiRouter.post('/', nip98, (req, res) => {
     const { role, staff_expires_at, display_name } = req.body || {};
     if (!role) return res.status(400).json({ error: 'role required' });
 
@@ -88,6 +102,12 @@ export default function createInvitesRouter({ cache, onMint = () => {}, gateHost
 
     onMint(minted.invite_token);
 
+    // Short-lived path-scoped subscribe cookie so the client's native
+    // EventSource (which can't send Authorization headers) can authenticate to
+    // the per-token SSE endpoint. Cookie is bound to the exact subscribe path
+    // for this token, so it cannot leak to any other endpoint.
+    res.setHeader('Set-Cookie', buildSubscribeCookieHeader(minted.invite_token));
+
     return res.status(201).json({
       invite_token: minted.invite_token,
       qr_payload,
@@ -100,25 +120,64 @@ export default function createInvitesRouter({ cache, onMint = () => {}, gateHost
   // staff manager's PWA opens this immediately after minting so the QR card
   // can flip from "Waiting…" to "Accepted" without polling.
   //
-  // Auth + scoping: the mounting middleware has populated req.staff with the
-  // caller's clubPubkey. We refuse cross-club subscriptions (a club staff
-  // member trying to watch another club's invite) with 403, and reject
-  // unknown tokens with 404 so a malicious caller can't probe for valid
-  // invite tokens by status code.
-  apiRouter.get('/:token/subscribe', (req, res) => {
+  // Auth + scoping: this route accepts EITHER
+  //   (a) the short-lived path-scoped subscribe cookie that POST / minted, OR
+  //   (b) a NIP-98 Authorization header (server-to-server / fetch callers).
+  // Browsers' native EventSource can't send Authorization, so the cookie path
+  // is the primary auth route from the PWA. The cookie is path-scoped to this
+  // exact /:token/subscribe URL and carries an HMAC over the token, so
+  // possession of a valid cookie is itself authorisation for this single
+  // subscription — we skip the cross-club ownership check in that case
+  // (the cookie was only ever issued to the rightful staff member at mint).
+  // For NIP-98 we keep the existing club-ownership check.
+  //
+  // 404 (not 403) for unknown tokens prevents a malicious caller from
+  // probing for valid invite tokens by status code.
+  const cookieOrNip98 = (req, res, next) => {
+    if (verifySubscribeCookie(req.params.token, req.headers.cookie)) {
+      req._inviteAuthVia = 'cookie';
+      return next();
+    }
+    if (verifyNip98Middleware) {
+      return verifyNip98Middleware(req, res, (err) => {
+        if (err) return next(err);
+        req._inviteAuthVia = 'nip98';
+        next();
+      });
+    }
+    // No NIP-98 middleware wired in — fall through assuming an upstream
+    // middleware already populated req.staff (preserves prior test contract).
+    req._inviteAuthVia = req.staff ? 'nip98' : 'none';
+    next();
+  };
+
+  apiRouter.get('/:token/subscribe', cookieOrNip98, (req, res) => {
     const { token } = req.params;
     const rec = cache.getByToken(token);
     if (!rec) return res.status(404).json({ error: 'invite not found' });
-    if (rec.club_pubkey !== req.staff?.clubPubkey) {
-      return res.status(403).json({ error: 'forbidden' });
+
+    // Cross-club ownership check only applies when auth was via NIP-98 (we
+    // know the caller's clubPubkey). Cookie auth is already path-scoped to
+    // this exact token, so the cookie itself proves authorisation.
+    if (req._inviteAuthVia !== 'cookie') {
+      if (rec.club_pubkey !== req.staff?.clubPubkey) {
+        return res.status(403).json({ error: 'forbidden' });
+      }
     }
 
-    const pubkey = req.staff?.pubkey;
-    const openCount = openConnections.get(pubkey) || 0;
+    // Per-connection cap: for NIP-98 we key on the staff pubkey (mirrors the
+    // existing rate-limit story); for cookie auth we key on the token hash
+    // since one cookie is bound to exactly one token. Either way, no single
+    // caller can hold more than MAX_CONNECTIONS_PER_PUBKEY streams open.
+    const connKey =
+      req._inviteAuthVia === 'cookie'
+        ? `cookie:${hashTokenHex(token).slice(0, 16)}`
+        : req.staff?.pubkey;
+    const openCount = openConnections.get(connKey) || 0;
     if (openCount >= MAX_CONNECTIONS_PER_PUBKEY) {
       return res.status(429).json({ error: 'Too many open subscriptions' });
     }
-    openConnections.set(pubkey, openCount + 1);
+    openConnections.set(connKey, openCount + 1);
 
     const tokenHash = hashTokenHex(token);
 
@@ -150,9 +209,9 @@ export default function createInvitesRouter({ cache, onMint = () => {}, gateHost
     req.on('close', () => {
       clearInterval(heartbeat);
       unsubscribe();
-      const remaining = (openConnections.get(pubkey) || 1) - 1;
-      if (remaining <= 0) openConnections.delete(pubkey);
-      else openConnections.set(pubkey, remaining);
+      const remaining = (openConnections.get(connKey) || 1) - 1;
+      if (remaining <= 0) openConnections.delete(connKey);
+      else openConnections.set(connKey, remaining);
       res.end();
     });
   });

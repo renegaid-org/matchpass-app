@@ -1,7 +1,26 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
+import { createHash, createHmac } from 'crypto';
 import createInvitesRouter from '../../server/routes/invites.js';
 import { createInviteCache } from '../../server/invite-cache.js';
+import { setSubscribeSecretForTest } from '../../server/auth.js';
+
+const TEST_SUBSCRIBE_SECRET = 'a'.repeat(64);
+
+beforeEach(() => {
+  setSubscribeSecretForTest(TEST_SUBSCRIBE_SECRET);
+});
+
+function cookieNameFor(token) {
+  return 'mp_invite_sub_' + createHash('sha256').update(token).digest('hex').slice(0, 8);
+}
+
+function signCookieValue(token, iat = Math.floor(Date.now() / 1000)) {
+  const mac = createHmac('sha256', TEST_SUBSCRIBE_SECRET)
+    .update(`${token}.${iat}`)
+    .digest('hex');
+  return `${iat}.${mac}`;
+}
 
 function makeApp({ inviterRole = 'admin' } = {}) {
   const cache = createInviteCache();
@@ -65,12 +84,16 @@ async function post(app, path, body) {
 // `app.listen(0)` + native-fetch pattern already used by `post()` above so we
 // avoid pulling in supertest.
 async function openSseAndAwaitFirstInviteEvent(app, path, whileOpen) {
+  return openSseAndAwaitFirstInviteEventWithHeaders(app, path, {}, whileOpen);
+}
+
+async function openSseAndAwaitFirstInviteEventWithHeaders(app, path, extraHeaders, whileOpen) {
   const server = app.listen(0);
   const port = server.address().port;
   const controller = new AbortController();
   try {
     const res = await fetch(`http://localhost:${port}${path}`, {
-      headers: { Accept: 'text/event-stream' },
+      headers: { Accept: 'text/event-stream', ...extraHeaders },
       signal: controller.signal,
     });
     if (res.status !== 200) {
@@ -219,6 +242,149 @@ describe('POST /api/gate/invites', () => {
     const { status } = await post(app, '/api/gate/invites', { role: 'gate_steward' });
     expect(status).toBe(403);
   });
+});
+
+// --- Cookie auth (Task 13) ---------------------------------------------------
+//
+// SSE callers from a browser can't send Authorization: Nostr because native
+// EventSource doesn't expose request headers. POST / therefore sets a short
+// path-scoped HMAC-signed cookie which the subscribe route accepts as a
+// parallel auth path to NIP-98.
+
+// App variant where the router runs with a real verifyNip98Middleware stub —
+// this is what Task 11's wiring will look like. The stub 401s when no auth
+// header is present, and only attaches req.staff when called with the magic
+// header value. We use it to prove the cookie path is independent of NIP-98
+// and that a tampered cookie fails over to NIP-98's 401.
+function makeAppWithRealAuth() {
+  const cache = createInviteCache();
+  const onMint = vi.fn();
+  const app = express();
+  app.use(express.json());
+  const verifyNip98Middleware = (req, res, next) => {
+    if (req.headers.authorization === 'Nostr ok') {
+      req.staff = {
+        pubkey: 'bb'.repeat(32),
+        role: 'admin',
+        clubPubkey: 'aa'.repeat(32),
+      };
+      return next();
+    }
+    return res.status(401).json({ error: 'Missing or invalid auth header' });
+  };
+  const { apiRouter } = createInvitesRouter({
+    cache,
+    onMint,
+    gateHost: 'https://gate.matchpass.club',
+    verifyNip98Middleware,
+  });
+  app.use('/api/gate/invites', apiRouter);
+  return { app, cache };
+}
+
+describe('POST /api/gate/invites — subscribe cookie', () => {
+  it('sets a path-scoped HMAC-signed cookie on successful mint', async () => {
+    const { app } = makeApp();
+    const server = app.listen(0);
+    const port = server.address().port;
+    try {
+      const res = await fetch(`http://localhost:${port}/api/gate/invites`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: 'gate_steward', display_name: 'Marcus' }),
+      });
+      expect(res.status).toBe(201);
+      const body = await res.json();
+      const setCookie = res.headers.get('set-cookie');
+      expect(setCookie).toBeTruthy();
+      // Name binds to the first 8 hex chars of sha256(token).
+      const expectedName = cookieNameFor(body.invite_token);
+      expect(setCookie).toContain(`${expectedName}=`);
+      // Value shape: <iat>.<hex>
+      expect(setCookie).toMatch(new RegExp(`${expectedName}=\\d+\\.[0-9a-f]{64}`));
+      // Path scoped to this token's subscribe endpoint only.
+      expect(setCookie).toContain(`Path=/api/gate/invites/${body.invite_token}/subscribe`);
+      // Hardening flags.
+      expect(setCookie).toContain('HttpOnly');
+      expect(setCookie).toContain('Secure');
+      expect(setCookie).toContain('SameSite=Strict');
+      expect(setCookie).toContain('Max-Age=900');
+    } finally {
+      server.close();
+    }
+  });
+});
+
+describe('GET /api/gate/invites/:token/subscribe — cookie auth', () => {
+  it('accepts a valid cookie with no Authorization header', async () => {
+    const { app, cache } = makeAppWithRealAuth();
+    const minted = cache.mint({
+      clubPubkey: 'aa'.repeat(32),
+      inviterPubkey: 'bb'.repeat(32),
+      role: 'gate_steward',
+      displayName: 'Marcus',
+    });
+    const cookieHeader = `${cookieNameFor(minted.invite_token)}=${signCookieValue(minted.invite_token)}`;
+    const result = await openSseAndAwaitFirstInviteEventWithHeaders(
+      app,
+      `/api/gate/invites/${minted.invite_token}/subscribe`,
+      { Cookie: cookieHeader },
+      async () => {
+        await new Promise((r) => setTimeout(r, 50));
+        cache.acceptBySessionPubkey(minted.session_pubkey, 'cc'.repeat(32));
+      },
+    );
+    expect(result.status).toBe(200);
+    expect(result.event).toBe('invite');
+    expect(result.data.type).toBe('accepted');
+  }, 5_000);
+
+  it('rejects a tampered cookie (HMAC mismatch) with 401', async () => {
+    const { app, cache } = makeAppWithRealAuth();
+    const minted = cache.mint({
+      clubPubkey: 'aa'.repeat(32),
+      inviterPubkey: 'bb'.repeat(32),
+      role: 'gate_steward',
+    });
+    // Flip a single hex char of the MAC to invalidate it.
+    const good = signCookieValue(minted.invite_token);
+    const tampered = good.slice(0, -1) + (good.slice(-1) === '0' ? '1' : '0');
+    const cookieHeader = `${cookieNameFor(minted.invite_token)}=${tampered}`;
+    const server = app.listen(0);
+    const port = server.address().port;
+    try {
+      const res = await fetch(
+        `http://localhost:${port}/api/gate/invites/${minted.invite_token}/subscribe`,
+        { headers: { Accept: 'text/event-stream', Cookie: cookieHeader } },
+      );
+      // Falls through to NIP-98 (no Authorization header) → 401.
+      expect(res.status).toBe(401);
+    } finally {
+      server.close();
+    }
+  });
+
+  it('still works via NIP-98 header when no cookie is present', async () => {
+    const { app, cache } = makeAppWithRealAuth();
+    const minted = cache.mint({
+      clubPubkey: 'aa'.repeat(32),
+      inviterPubkey: 'bb'.repeat(32),
+      role: 'gate_steward',
+      displayName: 'Marcus',
+    });
+    const result = await openSseAndAwaitFirstInviteEventWithHeaders(
+      app,
+      `/api/gate/invites/${minted.invite_token}/subscribe`,
+      { Authorization: 'Nostr ok' },
+      async () => {
+        await new Promise((r) => setTimeout(r, 50));
+        cache.acceptBySessionPubkey(minted.session_pubkey, 'cc'.repeat(32));
+      },
+    );
+    expect(result.status).toBe(200);
+    expect(result.event).toBe('invite');
+    expect(result.data.type).toBe('accepted');
+  }, 5_000);
 });
 
 describe('GET /staff/accept', () => {

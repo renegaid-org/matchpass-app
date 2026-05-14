@@ -67,6 +67,58 @@ export function createInviteCache({ now = () => Math.floor(Date.now() / 1000) } 
     return rest;
   }
 
+  function accept(token, personaPubkey) {
+    const rec = byTokenHash.get(hashToken(token));
+    if (!rec) throw new Error('invite not found');
+    if (rec.status !== 'pending') throw new Error('invite not pending');
+    if (now() > rec.pending_expires_at) throw new Error('invite expired');
+    rec.status = 'accepted';
+    rec.persona_pubkey = personaPubkey;
+    rec.accepted_at = now();
+  }
+
+  function consume(token, rosterEventId) {
+    const rec = byTokenHash.get(hashToken(token));
+    if (!rec) throw new Error('invite not found');
+    if (rec.status !== 'accepted') throw new Error('invite not accepted');
+    rec.status = 'consumed';
+    rec.roster_event_id = rosterEventId;
+    rec.session_privkey = '00'.repeat(32);  // wipe
+    byChallenge.delete(rec.auth_challenge);
+    bySessionPubkey.delete(rec.session_pubkey);
+  }
+
+  function cancel(token) {
+    const tokenHash = hashToken(token);
+    const rec = byTokenHash.get(tokenHash);
+    if (!rec) return;
+    rec.session_privkey = '00'.repeat(32);
+    byTokenHash.delete(tokenHash);
+    byChallenge.delete(rec.auth_challenge);
+    bySessionPubkey.delete(rec.session_pubkey);
+  }
+
+  function pruneExpired() {
+    const t = now();
+    for (const [hash, rec] of byTokenHash) {
+      if (rec.status === 'pending' && t > rec.pending_expires_at) {
+        rec.session_privkey = '00'.repeat(32);
+        byTokenHash.delete(hash);
+        byChallenge.delete(rec.auth_challenge);
+        bySessionPubkey.delete(rec.session_pubkey);
+      }
+    }
+  }
+
+  function clearAll() {
+    for (const rec of byTokenHash.values()) {
+      rec.session_privkey = '00'.repeat(32);
+    }
+    byTokenHash.clear();
+    byChallenge.clear();
+    bySessionPubkey.clear();
+  }
+
   return {
     mint,
     getByToken: (token) => publicRecord(byTokenHash.get(hashToken(token))),
@@ -80,5 +132,10 @@ export function createInviteCache({ now = () => Math.floor(Date.now() / 1000) } 
       return h ? byTokenHash.get(h) : null;  // secrets-included; only callable from unwrap
     },
     activeSessionPubkeys: () => [...bySessionPubkey.keys()],
+    accept,
+    consume,
+    cancel,
+    pruneExpired,
+    clearAll,
   };
 }

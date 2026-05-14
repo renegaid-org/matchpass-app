@@ -371,6 +371,16 @@ export function getRelayStatus() {
   return { connected: !!relay };
 }
 
+/**
+ * Return the live relay handle (or null if not yet connected / lost).
+ * Used by index.js to pass the handle into refreshInviteSubscription
+ * after every cache state change — kept as a getter (not a stable export)
+ * because the handle is replaced on reconnect.
+ */
+export function getRelay() {
+  return relay;
+}
+
 // ---------------------------------------------------------------------------
 // Invite gift-wrap (kind 1059) subscription
 // ---------------------------------------------------------------------------

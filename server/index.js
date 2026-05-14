@@ -14,12 +14,17 @@ import { ClubDiscovery } from './club-discovery.js';
 import {
   connectAndSubscribe,
   getRelayStatus,
+  getRelay,
   resubscribeRoster,
   fetchFanChain,
   subscribeToLiveEvents,
   publishEvent,
+  attachInviteCache,
+  refreshInviteSubscription,
 } from './relay.js';
 import { verifyNip98, requireRole } from './auth.js';
+import { createInviteCache } from './invite-cache.js';
+import { createInviteHandler } from './invite-handler.js';
 
 import createScanRouter from './routes/scan.js';
 import createEventRouter from './routes/event.js';
@@ -30,6 +35,7 @@ import createChainRouter from './routes/chain.js';
 import createSubscribeRouter from './routes/subscribe.js';
 import createRosterRouter from './routes/roster.js';
 import createStaffRouter from './routes/staff.js';
+import createInvitesRouter from './routes/invites.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -39,7 +45,30 @@ const rosterCache = new RosterCache();
 const scanTracker = new ScanTracker();
 const reviewRequestCache = new ReviewRequestCache();
 const eventAuthorCache = new EventAuthorCache();
+const inviteCache = createInviteCache();
 const caches = { chainTipCache, rosterCache, scanTracker, reviewRequestCache, eventAuthorCache };
+
+// Wire the kind-1059 gift-wrap handler into the relay's invite subscription.
+// `attachInviteCache` stores both for later use by refreshInviteSubscription —
+// it does not itself open any REQ. The first REQ is opened the moment an
+// invite is minted (which adds the first active session pubkey).
+const inviteHandler = createInviteHandler({
+  cache: inviteCache,
+  onAccept: (tokenHash, result) => {
+    console.log(`Invite ${tokenHash.slice(0, 8)} accepted by persona ${result.personaPubkey.slice(0, 8)}`);
+  },
+});
+attachInviteCache(inviteCache, inviteHandler);
+
+// Re-issue the gift-wrap REQ whenever the active session pubkey set changes.
+// Mint adds a pubkey (handled via the route's onMint callback below); consume
+// / expire / cancel remove one (handled here via cache.onEvent). Cancel does
+// not fire onEvent, but it's only called from cache.cancel() which is not
+// reachable from any wired-up code path right now — if that changes, the
+// caller should call refreshInviteSubscription itself.
+inviteCache.onEvent(() => {
+  refreshInviteSubscription(getRelay(), inviteCache.activeSessionPubkeys());
+});
 
 // Wire self-review enforcement: verifySignerAuthority now knows how to look up
 // who authored the event being reviewed. Closes the server-side gap flagged in
@@ -91,7 +120,7 @@ const auth = verifyNip98(rosterCache);
 
 // Routes
 app.use('/api/gate/scan', auth, createScanRouter(caches));
-app.use('/api/gate/event', auth, createEventRouter(caches));
+app.use('/api/gate/event', auth, createEventRouter({ ...caches, inviteCache }));
 // Tip lookup: needed by stewards who can issue chain events (roaming_steward
 // for cards, officers for sanctions/review outcomes). Gate stewards never
 // call it, so restricting here removes a cross-role chain-membership oracle.
@@ -104,6 +133,24 @@ app.use('/api/gate/subscribe', auth, createSubscribeRouter({ subscribeToLiveEven
 app.use('/api/gate/roster', auth, requireRole('admin'), createRosterRouter({ rosterCache, publishEvent }));
 // Officer-accessible read-only view of the roster + today's scan stats.
 app.use('/api/gate/staff', auth, requireRole('safety_officer', 'safeguarding_officer', 'admin'), createStaffRouter({ rosterCache, scanTracker }));
+
+// Staff QR invite endpoints. The router applies its own NIP-98 / cookie auth
+// internally so we don't mount global `auth` middleware here. The acceptRouter
+// renders public landing HTML and intentionally has no auth.
+const GATE_HOST = process.env.PUBLIC_GATE_HOST
+  || process.env.ALLOWED_ORIGIN
+  || `http://localhost:${process.env.PORT || 3000}`;
+const { apiRouter: invitesApiRouter, acceptRouter: invitesAcceptRouter } = createInvitesRouter({
+  cache: inviteCache,
+  // Minting adds a new session pubkey to the cache, so we must (re-)issue
+  // the gift-wrap REQ to include it. consume / expire are handled by the
+  // cache.onEvent hook above.
+  onMint: () => refreshInviteSubscription(getRelay(), inviteCache.activeSessionPubkeys()),
+  gateHost: GATE_HOST,
+  verifyNip98Middleware: auth,
+});
+app.use('/api/gate/invites', invitesApiRouter);
+app.use('/', invitesAcceptRouter);
 
 // Error handler
 app.use((err, req, res, next) => {
@@ -129,6 +176,12 @@ async function start() {
   await connectAndSubscribe(RELAY_URL, { chainTipCache, rosterCache }, clubPubkeys);
 
   scheduleMidnightClear(scanTracker);
+  scheduleInviteMidnightClear(inviteCache);
+
+  // Prune expired pending invites every 60 s. Expired records fire an 'expired'
+  // event before they're dropped, so the cache.onEvent hook will refresh the
+  // gift-wrap REQ to drop the now-stale session pubkey from the filter.
+  setInterval(() => inviteCache.pruneExpired(), 60_000);
 
   app.listen(PORT, () => {
     console.log(`matchpass-gate listening on ${PORT}`);
@@ -150,6 +203,26 @@ function scheduleMidnightClear(tracker) {
     setInterval(() => {
       tracker.clearDay();
       console.log('Scan tracker cleared at midnight');
+    }, 24 * 60 * 60 * 1000);
+  }, msUntilMidnight);
+}
+
+// Same pattern as scheduleMidnightClear — wipes any lingering invite records at
+// 00:00 local time so the cache never accumulates day-over-day. pruneExpired
+// already handles the 15-minute pending TTL; this catches accepted / consumed
+// records whose roster events were never published, plus any stale state.
+function scheduleInviteMidnightClear(cache) {
+  const now = new Date();
+  const midnight = new Date(now);
+  midnight.setHours(24, 0, 0, 0);
+  const msUntilMidnight = midnight.getTime() - now.getTime();
+
+  setTimeout(() => {
+    cache.clearAll();
+    console.log('Invite cache cleared at midnight');
+    setInterval(() => {
+      cache.clearAll();
+      console.log('Invite cache cleared at midnight');
     }, 24 * 60 * 60 * 1000);
   }, msUntilMidnight);
 }

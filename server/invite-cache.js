@@ -137,6 +137,19 @@ export function createInviteCache({ now = () => Math.floor(Date.now() / 1000) } 
     bySessionPubkey.clear();
   }
 
+  function acceptBySessionPubkey(sessionPubkey, personaPubkey) {
+    const tokenHash = bySessionPubkey.get(sessionPubkey);
+    if (!tokenHash) return null;
+    const rec = byTokenHash.get(tokenHash);
+    if (!rec) return null;
+    if (rec.status !== 'pending') throw new Error('invite not pending');
+    if (now() > rec.pending_expires_at) throw new Error('invite expired');
+    rec.status = 'accepted';
+    rec.persona_pubkey = personaPubkey;
+    rec.accepted_at = now();
+    return tokenHash;  // identifier for SSE fanout
+  }
+
   return {
     mint,
     getByToken: (token) => publicRecord(byTokenHash.get(hashToken(token))),
@@ -151,10 +164,28 @@ export function createInviteCache({ now = () => Math.floor(Date.now() / 1000) } 
     },
     activeSessionPubkeys: () => [...bySessionPubkey.keys()],
     accept,
+    acceptBySessionPubkey,
     consume,
     cancel,
     pruneExpired,
     clearAll,
     checkAuthority,
+    // Test-only: overwrite the auto-generated session keys / challenge with
+    // fixture values so cryptographic fixtures built outside the cache can be
+    // exercised against it. Atomically updates the bySessionPubkey and
+    // byChallenge index maps so lookups continue to work after the swap.
+    _injectForTest(token, partial) {
+      const rec = byTokenHash.get(hashToken(token));
+      if (!rec) return;
+      if (partial.session_pubkey && partial.session_pubkey !== rec.session_pubkey) {
+        bySessionPubkey.delete(rec.session_pubkey);
+        bySessionPubkey.set(partial.session_pubkey, hashToken(token));
+      }
+      if (partial.auth_challenge && partial.auth_challenge !== rec.auth_challenge) {
+        byChallenge.delete(rec.auth_challenge);
+        byChallenge.set(partial.auth_challenge, hashToken(token));
+      }
+      Object.assign(rec, partial);
+    },
   };
 }

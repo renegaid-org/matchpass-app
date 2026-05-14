@@ -59,6 +59,25 @@ export default function createInvitesRouter({
   // POST / always requires NIP-98 — there's no cookie path for minting.
   const nip98 = verifyNip98Middleware || ((_req, _res, next) => next());
 
+  // GET /accepted — Snapshot of accepted-but-not-yet-consumed invites for the
+  // requester's club. Used by the PWA's PendingAcceptancesPanel to show a
+  // queue of personas waiting to be added to the roster. NIP-98 authenticated
+  // (admin / staff_manager only — these are the roles that can act on the
+  // queue by publishing a new roster). The handler filters strictly by the
+  // requester's clubPubkey so an admin from club A cannot see club B's queue.
+  apiRouter.get('/accepted', nip98, (req, res) => {
+    const role = req.staff?.role;
+    if (role !== 'admin' && role !== 'staff_manager') {
+      return res.status(403).json({ error: 'forbidden' });
+    }
+    const clubPubkey = req.staff.clubPubkey;
+    const accepted = cache.acceptedInvitesForClub(clubPubkey);
+    const invites = accepted
+      .map(({ token_hash }) => cache.detailByTokenHash(token_hash))
+      .filter((d) => d && d.club_pubkey === clubPubkey);
+    return res.json({ invites });
+  });
+
   apiRouter.post('/', nip98, (req, res) => {
     const { role, staff_expires_at, display_name } = req.body || {};
     if (!role) return res.status(400).json({ error: 'role required' });

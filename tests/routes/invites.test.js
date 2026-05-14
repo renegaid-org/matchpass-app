@@ -387,6 +387,97 @@ describe('GET /api/gate/invites/:token/subscribe — cookie auth', () => {
   }, 5_000);
 });
 
+describe('GET /api/gate/invites/accepted', () => {
+  it('returns accepted invites for the requester\'s club (admin)', async () => {
+    const { app, cache } = makeApp();
+    // Mint two invites for the admin's club and accept one. The accepted one
+    // must come back; the still-pending one must not.
+    const accepted = cache.mint({
+      clubPubkey: 'aa'.repeat(32),
+      inviterPubkey: 'bb'.repeat(32),
+      role: 'gate_steward',
+      displayName: 'Marcus',
+      staffExpiresAt: Math.floor(Date.now() / 1000) + 4 * 3600,
+    });
+    cache.acceptBySessionPubkey(accepted.session_pubkey, 'cc'.repeat(32));
+    cache.mint({
+      clubPubkey: 'aa'.repeat(32),
+      inviterPubkey: 'bb'.repeat(32),
+      role: 'gate_steward',
+      displayName: 'Pending Pat',
+    });
+
+    const server = app.listen(0);
+    const port = server.address().port;
+    try {
+      const res = await fetch(`http://localhost:${port}/api/gate/invites/accepted`);
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.invites).toHaveLength(1);
+      const inv = body.invites[0];
+      expect(inv.persona_pubkey).toBe('cc'.repeat(32));
+      expect(inv.role).toBe('gate_steward');
+      expect(inv.display_name).toBe('Marcus');
+      expect(inv.club_pubkey).toBe('aa'.repeat(32));
+      expect(inv.status).toBe('accepted');
+      expect(typeof inv.token_hash).toBe('string');
+      expect(typeof inv.accepted_at).toBe('number');
+    } finally {
+      server.close();
+    }
+  });
+
+  it('does not leak accepted invites from a different club', async () => {
+    // Two apps sharing a single cache: app A is an admin on club A, app B on
+    // club B. An accepted invite on club B must NOT appear in club A's view.
+    const cache = createInviteCache();
+    const onMint = vi.fn();
+    const makeAppForClub = (clubPubkey) => {
+      const app = express();
+      app.use(express.json());
+      app.use((req, _res, next) => {
+        req.staff = {
+          pubkey: 'bb'.repeat(32),
+          role: 'admin',
+          clubPubkey,
+        };
+        next();
+      });
+      const { apiRouter } = createInvitesRouter({
+        cache,
+        onMint,
+        gateHost: 'https://gate.matchpass.club',
+      });
+      app.use('/api/gate/invites', apiRouter);
+      return app;
+    };
+
+    const clubA = 'aa'.repeat(32);
+    const clubB = 'dd'.repeat(32);
+    const appA = makeAppForClub(clubA);
+
+    // Accepted invite on club B only.
+    const mintedB = cache.mint({
+      clubPubkey: clubB,
+      inviterPubkey: 'ee'.repeat(32),
+      role: 'gate_steward',
+      displayName: 'B-side Bo',
+    });
+    cache.acceptBySessionPubkey(mintedB.session_pubkey, 'ff'.repeat(32));
+
+    const server = appA.listen(0);
+    const port = server.address().port;
+    try {
+      const res = await fetch(`http://localhost:${port}/api/gate/invites/accepted`);
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.invites).toEqual([]);
+    } finally {
+      server.close();
+    }
+  });
+});
+
 describe('GET /staff/accept', () => {
   it('renders the accepted confirmation page once the invite has been accepted', async () => {
     const { app, cache } = makeApp();

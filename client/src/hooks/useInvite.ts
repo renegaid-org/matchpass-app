@@ -27,6 +27,56 @@ export interface InviteState {
   error?: string;
 }
 
+export interface AcceptedInvite {
+  token_hash: string;
+  club_pubkey: string;
+  role: InviteRole;
+  display_name?: string;
+  persona_pubkey: string;
+  accepted_at: number;
+  staff_expires_at?: number;
+  status: 'accepted';
+}
+
+/**
+ * Poll GET /api/gate/invites/accepted every 5 s and return the current queue
+ * of accepted-but-unconsumed invites for the requester's club. Used by the
+ * Roster page's PendingAcceptancesPanel so an admin who DIDN'T mint an invite
+ * can still see (and sign) it. The per-invite high-frequency state lives on
+ * InviteQRDisplay's SSE; this view is the lower-frequency overview.
+ */
+export function usePendingAcceptances(): AcceptedInvite[] {
+  const { signer } = useAuth();
+  const [items, setItems] = useState<AcceptedInvite[]>([]);
+
+  useEffect(() => {
+    if (!signer) {
+      setItems([]);
+      return;
+    }
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const fullUrl = `${window.location.origin}/api/gate/invites/accepted`;
+        const authHeader = await buildNip98AuthHeader('GET', fullUrl, undefined, signer);
+        const res = await fetch('/api/gate/invites/accepted', {
+          headers: { Authorization: authHeader },
+        });
+        if (!res.ok) return;
+        const j = await res.json() as { invites: AcceptedInvite[] };
+        if (!cancelled) setItems(j.invites ?? []);
+      } catch {
+        /* swallow — next tick retries */
+      }
+    };
+    void poll();
+    const i = setInterval(() => { void poll(); }, 5000);
+    return () => { cancelled = true; clearInterval(i); };
+  }, [signer]);
+
+  return items;
+}
+
 export function useInvite() {
   const { signer } = useAuth();
   const [state, setState] = useState<InviteState>({ invite: null, status: 'idle' });

@@ -5,9 +5,21 @@
 // owns only the mint path.
 
 import { Router } from 'express';
+import { createHash } from 'crypto';
 import { checkAuthority } from '../invite-cache.js';
 
 const RELAY_URL = process.env.RELAY_URL || 'wss://relay.trotters.cc';
+
+// Per-pubkey open-connection cap for invite SSE streams. Mirrors the cap in
+// server/routes/subscribe.js — long-lived streams bypass the request-rate
+// limiter, so an authenticated staff member could otherwise open unbounded
+// subscriptions and exhaust server FDs / memory.
+const MAX_CONNECTIONS_PER_PUBKEY = 3;
+const openConnections = new Map(); // pubkey -> count
+
+function hashTokenHex(token) {
+  return createHash('sha256').update(token).digest('hex');
+}
 
 function buildQrPayload({ gateHost, inviteToken, sessionPubkey, authChallenge }) {
   const url = new URL('https://mysignet.app/');
@@ -74,6 +86,68 @@ export default function createInvitesRouter({ cache, onMint = () => {}, gateHost
       invite_token: minted.invite_token,
       qr_payload,
       pending_expires_at: minted.pending_expires_at,
+    });
+  });
+
+  // GET /:token/subscribe — Server-Sent Events stream of lifecycle
+  // transitions for a single invite (accepted / consumed / expired). The
+  // staff manager's PWA opens this immediately after minting so the QR card
+  // can flip from "Waiting…" to "Accepted" without polling.
+  //
+  // Auth + scoping: the mounting middleware has populated req.staff with the
+  // caller's clubPubkey. We refuse cross-club subscriptions (a club staff
+  // member trying to watch another club's invite) with 403, and reject
+  // unknown tokens with 404 so a malicious caller can't probe for valid
+  // invite tokens by status code.
+  router.get('/:token/subscribe', (req, res) => {
+    const { token } = req.params;
+    const rec = cache.getByToken(token);
+    if (!rec) return res.status(404).json({ error: 'invite not found' });
+    if (rec.club_pubkey !== req.staff?.clubPubkey) {
+      return res.status(403).json({ error: 'forbidden' });
+    }
+
+    const pubkey = req.staff?.pubkey;
+    const openCount = openConnections.get(pubkey) || 0;
+    if (openCount >= MAX_CONNECTIONS_PER_PUBKEY) {
+      return res.status(429).json({ error: 'Too many open subscriptions' });
+    }
+    openConnections.set(pubkey, openCount + 1);
+
+    const tokenHash = hashTokenHex(token);
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
+
+    // Initial comment flushes through proxies right away.
+    res.write(': connected\n\n');
+
+    const send = (eventTokenHash, payload) => {
+      // Per-token fanout: the cache emits to all listeners, the route layer
+      // filters by hash before writing.
+      if (eventTokenHash !== tokenHash) return;
+      res.write(`event: invite\n`);
+      res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    };
+
+    const unsubscribe = cache.onEvent(send);
+
+    // Heartbeat every 25 s keeps the connection alive through proxies that
+    // idle-close at 30–60 s (Cloudflare, Caddy default timeouts).
+    const heartbeat = setInterval(() => {
+      res.write(': ping\n\n');
+    }, 25_000);
+
+    req.on('close', () => {
+      clearInterval(heartbeat);
+      unsubscribe();
+      const remaining = (openConnections.get(pubkey) || 1) - 1;
+      if (remaining <= 0) openConnections.delete(pubkey);
+      else openConnections.set(pubkey, remaining);
+      res.end();
     });
   });
 

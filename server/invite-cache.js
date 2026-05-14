@@ -46,6 +46,16 @@ export function createInviteCache({ now = () => Math.floor(Date.now() / 1000) } 
   // session_pubkey → token_hash
   const bySessionPubkey = new Map();
 
+  // Event bus for SSE fanout. Listeners receive (tokenHash, payload) tuples
+  // for accepted / consumed / expired transitions. Cache stays the single
+  // source of truth — the route layer just filters and forwards.
+  const _listeners = new Set();
+  function emit(tokenHash, payload) {
+    for (const l of _listeners) {
+      try { l(tokenHash, payload); } catch (e) { console.error(e); }
+    }
+  }
+
   function mint({ clubPubkey, inviterPubkey, role, displayName, staffExpiresAt }) {
     const token = urlSafeRandomToken();
     const tokenHash = hashToken(token);
@@ -96,7 +106,8 @@ export function createInviteCache({ now = () => Math.floor(Date.now() / 1000) } 
   }
 
   function consume(token, rosterEventId) {
-    const rec = byTokenHash.get(hashToken(token));
+    const tokenHash = hashToken(token);
+    const rec = byTokenHash.get(tokenHash);
     if (!rec) throw new Error('invite not found');
     if (rec.status !== 'accepted') throw new Error('invite not accepted');
     rec.status = 'consumed';
@@ -104,6 +115,7 @@ export function createInviteCache({ now = () => Math.floor(Date.now() / 1000) } 
     rec.session_privkey = '00'.repeat(32);  // wipe
     byChallenge.delete(rec.auth_challenge);
     bySessionPubkey.delete(rec.session_pubkey);
+    emit(tokenHash, { type: 'consumed', roster_event_id: rosterEventId });
   }
 
   function cancel(token) {
@@ -120,6 +132,8 @@ export function createInviteCache({ now = () => Math.floor(Date.now() / 1000) } 
     const t = now();
     for (const [hash, rec] of byTokenHash) {
       if (rec.status === 'pending' && t > rec.pending_expires_at) {
+        // Emit before deletion so listeners still see a valid hash mapping.
+        emit(hash, { type: 'expired' });
         rec.session_privkey = '00'.repeat(32);
         byTokenHash.delete(hash);
         byChallenge.delete(rec.auth_challenge);
@@ -147,6 +161,12 @@ export function createInviteCache({ now = () => Math.floor(Date.now() / 1000) } 
     rec.status = 'accepted';
     rec.persona_pubkey = personaPubkey;
     rec.accepted_at = now();
+    emit(tokenHash, {
+      type: 'accepted',
+      persona_pubkey: personaPubkey,
+      accepted_at: rec.accepted_at,
+      display_name: rec.display_name,
+    });
     return tokenHash;  // identifier for SSE fanout
   }
 
@@ -170,6 +190,11 @@ export function createInviteCache({ now = () => Math.floor(Date.now() / 1000) } 
     pruneExpired,
     clearAll,
     checkAuthority,
+    onEvent(listener) {
+      _listeners.add(listener);
+      return () => _listeners.delete(listener);
+    },
+    _emitForTest: emit,
     // Test-only: overwrite the auto-generated session keys / challenge with
     // fixture values so cryptographic fixtures built outside the cache can be
     // exercised against it. Atomically updates the bySessionPubkey and

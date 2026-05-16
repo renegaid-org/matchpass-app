@@ -1,4 +1,5 @@
 import { verifyEvent } from 'nostr-tools/pure';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'crypto';
 
 // Replay prevention: consumed event IDs. The cache key timestamp is the event's
 // own created_at * 1000 (ms) — not the wall-clock time of first use — so cache
@@ -116,6 +117,117 @@ export function verifyNip98(rosterCache) {
       return res.status(401).json({ error: 'Auth verification failed' });
     }
   };
+}
+
+// ---------------------------------------------------------------------------
+// Short-lived path-scoped subscription cookie.
+//
+// Browsers' native EventSource can't send Authorization headers, so the SSE
+// route at GET /api/gate/invites/:token/subscribe accepts EITHER a NIP-98
+// header (server-to-server / fetch callers) OR a per-token HMAC-signed cookie
+// minted at POST-time.
+//
+// Cookie shape:
+//   Name : mp_invite_sub_<first8 of sha256(token)>
+//   Value: <iat>.<hmac_hex>   where hmac = HMAC-SHA256(secret, `${token}.${iat}`)
+//   Path : /api/gate/invites/<token>/subscribe   (browser only ever sends it
+//          back to the exact SSE endpoint, so possession of the cookie is
+//          itself authorisation for that single subscription).
+//   Flags: HttpOnly; Secure; Max-Age=900; SameSite=Strict
+//
+// The secret is sourced from INVITE_SUBSCRIBE_SECRET; if unset we generate a
+// random 32-byte hex at process start. Restarts therefore invalidate all
+// in-flight subscribe cookies, which is consistent with matchpass-gate's
+// stateless / "rebuild from the chain" model.
+const COOKIE_NAME_PREFIX = 'mp_invite_sub_';
+const COOKIE_MAX_AGE_SECONDS = 900;
+
+let _subscribeSecret =
+  process.env.INVITE_SUBSCRIBE_SECRET || randomBytes(32).toString('hex');
+
+export function setSubscribeSecretForTest(secret) {
+  _subscribeSecret = secret;
+}
+
+export function getSubscribeSecret() {
+  return _subscribeSecret;
+}
+
+function cookieNameForToken(token) {
+  return COOKIE_NAME_PREFIX + createHash('sha256').update(token).digest('hex').slice(0, 8);
+}
+
+function hmacForToken(token, iat) {
+  return createHmac('sha256', _subscribeSecret).update(`${token}.${iat}`).digest('hex');
+}
+
+/**
+ * Build the Set-Cookie header value for a freshly minted invite token.
+ * Returns the full header string suitable for `res.setHeader('Set-Cookie', ...)`.
+ */
+export function buildSubscribeCookieHeader(token) {
+  const iat = Math.floor(Date.now() / 1000);
+  const mac = hmacForToken(token, iat);
+  const name = cookieNameForToken(token);
+  const value = `${iat}.${mac}`;
+  const path = `/api/gate/invites/${encodeURIComponent(token)}/subscribe`;
+  return (
+    `${name}=${value}; Path=${path}; HttpOnly; Secure; SameSite=Strict; ` +
+    `Max-Age=${COOKIE_MAX_AGE_SECONDS}`
+  );
+}
+
+/**
+ * Parse a raw Cookie header into a flat name->value map. Tolerates stray
+ * whitespace and missing values; never throws.
+ */
+function parseCookieHeader(header) {
+  const out = {};
+  if (!header || typeof header !== 'string') return out;
+  for (const part of header.split(';')) {
+    const eq = part.indexOf('=');
+    if (eq === -1) continue;
+    const k = part.slice(0, eq).trim();
+    const v = part.slice(eq + 1).trim();
+    if (k) out[k] = v;
+  }
+  return out;
+}
+
+/**
+ * Verify that the Cookie header carries a valid, in-window subscribe cookie
+ * for the given invite token. Constant-time HMAC comparison; returns true on
+ * success, false on any failure (missing cookie, malformed value, expired,
+ * tampered MAC).
+ */
+export function verifySubscribeCookie(token, cookieHeader) {
+  const cookies = parseCookieHeader(cookieHeader);
+  const name = cookieNameForToken(token);
+  const value = cookies[name];
+  if (!value) return false;
+
+  const dot = value.indexOf('.');
+  if (dot === -1) return false;
+  const iatStr = value.slice(0, dot);
+  const macHex = value.slice(dot + 1);
+  const iat = Number(iatStr);
+  if (!Number.isFinite(iat) || iat <= 0) return false;
+  if (!/^[0-9a-f]+$/.test(macHex)) return false;
+
+  const now = Math.floor(Date.now() / 1000);
+  if (now - iat > COOKIE_MAX_AGE_SECONDS) return false;
+  // Allow up to 60 s of negative skew (clock drift) but no further-future iat.
+  if (iat - now > 60) return false;
+
+  const expected = hmacForToken(token, iat);
+  const a = Buffer.from(expected, 'hex');
+  const b = Buffer.from(macHex, 'hex');
+  if (a.length !== b.length) return false;
+  try {
+    return timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
 }
 
 /**

@@ -6,6 +6,8 @@ import {
   type StaffEntry,
   type StaffRole,
 } from '../hooks/useRoster';
+import { AddStaffWizard } from '../components/AddStaffWizard';
+import { PendingAcceptancesPanel } from '../components/PendingAcceptancesPanel';
 
 interface Props {
   signer: Nip98Signer;
@@ -59,6 +61,7 @@ export function Roster({ signer, adminPubkey, onBack }: Props) {
   const [newName, setNewName] = useState('');
   const [newExternal, setNewExternal] = useState(false);
   const [newExpiryPreset, setNewExpiryPreset] = useState<ExpiryPreset>('permanent');
+  const [showWizard, setShowWizard] = useState(false);
 
   useEffect(() => {
     setDraft(staff);
@@ -122,6 +125,24 @@ export function Roster({ signer, adminPubkey, onBack }: Props) {
 
   return (
     <div className="fade-in">
+      <div className="section">
+        <button
+          className="btn btn-primary"
+          onClick={() => setShowWizard(true)}
+          disabled={busy}
+        >
+          + Add staff
+        </button>
+      </div>
+
+      {showWizard && (
+        <div className="section">
+          <AddStaffWizard onClose={() => setShowWizard(false)} />
+        </div>
+      )}
+
+      <PendingAcceptancesPanel signer={signer} />
+
       <div className="section">
         <div className="section-title">Current roster</div>
         {loading && <p style={{ color: 'var(--text-muted)' }}>Loading…</p>}

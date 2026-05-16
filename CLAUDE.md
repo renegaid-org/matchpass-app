@@ -47,6 +47,8 @@ npm test                     # Vitest
 | RELAY_URL | wss://relay.trotters.cc | Nostr relay |
 | MATCHPASS_CLUB_API | https://matchpass.club | Club discovery endpoint |
 | ALLOWED_ORIGIN | http://localhost:3000 | CORS origin |
+| PUBLIC_GATE_HOST | (falls back to ALLOWED_ORIGIN) | Outbound host name for staff-invite QR URLs (must be HTTPS in prod) |
+| INVITE_SUBSCRIBE_SECRET | (random per restart) | HMAC secret for invite-SSE cookie. Set in prod or restarts invalidate in-flight invite cookies. |
 
 ## Endpoints
 
@@ -57,3 +59,8 @@ npm test                     # Vitest
 | GET | /api/gate/tip/:pubkey | NIP-98 | Chain tip lookup for PWA |
 | GET | /api/gate/dashboard | NIP-98 + safety_officer | Today's ephemeral stats |
 | GET | /api/gate/status | None | Health check |
+| POST | /api/gate/invites | NIP-98 + admin/staff_manager | Mint staff-onboarding QR invite |
+| DELETE | /api/gate/invites/:token | NIP-98 + admin/staff_manager | Cancel an unconsumed invite |
+| GET | /api/gate/invites/:token/subscribe | NIP-98 OR mint-time cookie | SSE for invite lifecycle (accept/consume/expire) |
+| GET | /api/gate/invites/accepted | NIP-98 + admin/staff_manager | List accepted-but-unsigned invites for the requester's club |
+| GET | /staff/accept | None | Public landing page after Signet auth via the QR's post= URL |

@@ -370,3 +370,69 @@ export function resubscribeRoster(clubPubkeys) {
 export function getRelayStatus() {
   return { connected: !!relay };
 }
+
+/**
+ * Return the live relay handle (or null if not yet connected / lost).
+ * Used by index.js to pass the handle into refreshInviteSubscription
+ * after every cache state change — kept as a getter (not a stable export)
+ * because the handle is replaced on reconnect.
+ */
+export function getRelay() {
+  return relay;
+}
+
+// ---------------------------------------------------------------------------
+// Invite gift-wrap (kind 1059) subscription
+// ---------------------------------------------------------------------------
+// Tracks one live REQ filtered by the `p` tag of every active invite session
+// pubkey. The set changes every time an invite is minted / consumed / cancelled
+// / pruned, so the subscription is closed and re-opened idempotently via
+// refreshInviteSubscription. The relay handle is passed in so this module
+// stays test-friendly without exposing the module-level `relay` singleton.
+
+let _inviteSubscription = null;
+let _inviteCache = null;
+let _unwrapHandler = null;
+
+export function _resetInviteSubscriptionForTest() {
+  if (_inviteSubscription) { _inviteSubscription.close(); }
+  _inviteSubscription = null;
+  _inviteCache = null;
+  _unwrapHandler = null;
+}
+
+/**
+ * Open or refresh the gift-wrap subscription. Call after every invite mint
+ * (adds a session pubkey to filter) and every invite consume / cancel /
+ * prune (removes one). The REQ is re-issued each call — same input yields
+ * an equivalent subscription. With zero active session pubkeys, no REQ is
+ * sent (avoids a relay-wide fanout of every 1059 in the world).
+ */
+export function refreshInviteSubscription(relayInstance, activeSessionPubkeys) {
+  if (!relayInstance) return;
+  if (_inviteSubscription) { _inviteSubscription.close(); _inviteSubscription = null; }
+  if (activeSessionPubkeys.length === 0) return;
+  _inviteSubscription = relayInstance.subscribe(
+    [{ kinds: [1059], '#p': activeSessionPubkeys }],
+    {
+      onevent: (event) => {
+        if (_unwrapHandler) {
+          Promise.resolve(_unwrapHandler(event)).catch(err => {
+            console.error('Invite gift-wrap handler threw:', err.message);
+          });
+        }
+      },
+    },
+  );
+}
+
+/**
+ * Wire the invite cache + unwrap handler. Called once at startup by index.js
+ * after the cache is constructed.
+ */
+export function attachInviteCache(cache, handler) {
+  _inviteCache = cache;
+  _unwrapHandler = handler;
+}
+
+export function _getInviteCacheForTest() { return _inviteCache; }

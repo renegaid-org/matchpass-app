@@ -1,10 +1,10 @@
 import { Router } from 'express';
 import { verifyEvent } from 'nostr-tools/pure';
-import { EVENT_KINDS, isValidPubkey, isValidCardType, isValidCategory, isValidSanctionType, isValidReviewOutcome } from '../chain/types.js';
+import { EVENT_KINDS, STAFF_ROSTER_KIND, isValidPubkey, isValidCardType, isValidCategory, isValidSanctionType, isValidReviewOutcome } from '../chain/types.js';
 import { verifySignerAuthority } from '../chain/verify.js';
 import { publishEvent } from '../relay.js';
 
-const ALLOWED_KINDS = new Set(Object.values(EVENT_KINDS));
+const ALLOWED_KINDS = new Set([...Object.values(EVENT_KINDS), STAFF_ROSTER_KIND]);
 
 // Per-fan lock — prevents concurrent submissions racing on the same chain tip.
 // Bounded by FAN_LOCK_TIMEOUT_MS plus a size cap that REFUSES new requests once
@@ -49,7 +49,7 @@ async function withFanLock(fanPubkey, fn) {
   }
 }
 
-export default function createEventRouter({ chainTipCache, rosterCache, eventAuthorCache }) {
+export default function createEventRouter({ chainTipCache, rosterCache, eventAuthorCache, inviteCache } = {}) {
   const router = Router();
 
   router.post('/', async (req, res) => {
@@ -73,6 +73,54 @@ export default function createEventRouter({ chainTipCache, rosterCache, eventAut
 
     if (!ALLOWED_KINDS.has(event.kind)) {
       return res.status(400).json({ error: `Event kind ${event.kind} not allowed` });
+    }
+
+    // Roster publishes (kind-31920) follow a different validation flow from
+    // chain events: they are self-signed by the club key, carry one p-tag
+    // per staff member (not a fan), and don't participate in chain linkage.
+    // After a successful relay publish we additionally consume any invite
+    // whose accepted persona_pubkey now appears in the published roster.
+    if (event.kind === STAFF_ROSTER_KIND) {
+      const clubPubkey = req.staff?.clubPubkey;
+      if (!clubPubkey) {
+        return res.status(403).json({ error: 'No club pubkey on session' });
+      }
+      if (event.pubkey !== clubPubkey) {
+        return res.status(403).json({ error: 'Roster must be signed by the club pubkey' });
+      }
+
+      try {
+        await publishEvent(event);
+      } catch (err) {
+        console.error('Relay publish failed:', err.message);
+        return res.status(502).json({ error: 'Relay publish failed' });
+      }
+
+      // Consume any invite whose accepted persona now sits on the roster.
+      // Errors here must NOT fail the publish (the relay has already accepted
+      // the event). The snapshot from acceptedInvitesForClub is detached from
+      // the cache map so consumeByTokenHash mutations don't disturb the loop.
+      if (inviteCache) {
+        try {
+          const pTags = (event.tags || [])
+            .filter(t => Array.isArray(t) && t[0] === 'p' && typeof t[1] === 'string')
+            .map(t => t[1]);
+          const pSet = new Set(pTags);
+          for (const accepted of inviteCache.acceptedInvitesForClub(event.pubkey)) {
+            if (pSet.has(accepted.persona_pubkey)) {
+              try {
+                inviteCache.consumeByTokenHash(accepted.token_hash, event.id);
+              } catch (err) {
+                console.warn(`Invite consume failed for ${accepted.token_hash.slice(0, 8)}: ${err.message}`);
+              }
+            }
+          }
+        } catch (err) {
+          console.warn(`Invite consume hook failed: ${err.message}`);
+        }
+      }
+
+      return res.status(201).json({ ok: true, eventId: event.id });
     }
 
     const pTag = event.tags?.find(t => Array.isArray(t) && t[0] === 'p');

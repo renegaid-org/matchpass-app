@@ -4,8 +4,11 @@ import { REVIEW_REQUEST_KIND } from '../chain/types.js';
 // Per-pubkey open-connection cap. SSE streams are long-lived and bypass the
 // request-rate limiter once the initial GET is through, so an authenticated
 // client can otherwise open unbounded streams and exhaust server FDs / memory.
+//
+// The counter map lives inside the router factory (NOT at module scope) so
+// each createSubscribeRouter() call gets its own counter. That keeps
+// per-test app instances isolated and removes a module-level singleton.
 const MAX_CONNECTIONS_PER_PUBKEY = 3;
-const openConnections = new Map(); // pubkey -> count
 
 /**
  * GET /api/gate/subscribe
@@ -22,6 +25,9 @@ const openConnections = new Map(); // pubkey -> count
  */
 export default function createSubscribeRouter({ subscribeToLiveEvents }) {
   const router = Router();
+  // Per-router-instance SSE connection counter. See the comment near
+  // MAX_CONNECTIONS_PER_PUBKEY for why this is scoped here.
+  const openConnections = new Map(); // pubkey -> count
 
   router.get('/', (req, res) => {
     const pubkey = req.staff?.pubkey;

@@ -217,6 +217,69 @@ describe('GET /api/gate/invites/:token/subscribe (SSE)', () => {
       server.close();
     }
   });
+
+  // Validates the per-router-instance openConnections counter. Two
+  // independent makeApp() calls must NOT share the cap, otherwise a stale
+  // counter from one test would leak into the next. Pre-fix this was a
+  // module-level Map.
+  it('429-caps at MAX_CONNECTIONS_PER_PUBKEY per router instance, isolated across apps', async () => {
+    const MAX = 3;
+    const openOneStream = async (port, path) => {
+      const controller = new AbortController();
+      const res = await fetch(`http://localhost:${port}${path}`, {
+        headers: { Accept: 'text/event-stream' },
+        signal: controller.signal,
+      });
+      return { status: res.status, abort: () => controller.abort() };
+    };
+
+    // First app: open MAX subscriptions to the same invite, then expect 429.
+    const app1 = makeApp();
+    const minted1 = app1.cache.mint({
+      clubPubkey: 'aa'.repeat(32),
+      inviterPubkey: 'bb'.repeat(32),
+      role: 'gate_steward',
+    });
+    const server1 = app1.app.listen(0);
+    const port1 = server1.address().port;
+    const opened1 = [];
+    try {
+      for (let i = 0; i < MAX; i++) {
+        const s = await openOneStream(port1, `/api/gate/invites/${minted1.invite_token}/subscribe`);
+        expect(s.status).toBe(200);
+        opened1.push(s);
+      }
+      const overflow = await openOneStream(
+        port1,
+        `/api/gate/invites/${minted1.invite_token}/subscribe`,
+      );
+      expect(overflow.status).toBe(429);
+
+      // Second app: same admin pubkey, fresh router instance. The cap must
+      // be independent — the first app's full counter must NOT carry over.
+      const app2 = makeApp();
+      const minted2 = app2.cache.mint({
+        clubPubkey: 'aa'.repeat(32),
+        inviterPubkey: 'bb'.repeat(32),
+        role: 'gate_steward',
+      });
+      const server2 = app2.app.listen(0);
+      const port2 = server2.address().port;
+      try {
+        const fresh = await openOneStream(
+          port2,
+          `/api/gate/invites/${minted2.invite_token}/subscribe`,
+        );
+        expect(fresh.status).toBe(200);
+        fresh.abort();
+      } finally {
+        server2.close();
+      }
+    } finally {
+      for (const s of opened1) s.abort();
+      server1.close();
+    }
+  }, 8_000);
 });
 
 describe('POST /api/gate/invites', () => {

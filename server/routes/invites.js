@@ -20,8 +20,12 @@ const RELAY_URL = process.env.RELAY_URL || 'wss://relay.trotters.cc';
 // server/routes/subscribe.js — long-lived streams bypass the request-rate
 // limiter, so an authenticated staff member could otherwise open unbounded
 // subscriptions and exhaust server FDs / memory.
+//
+// The counter map lives inside the router factory closure (NOT at module
+// scope) so that each createInvitesRouter() call gets its own counter.
+// That keeps per-test app instances isolated from each other in vitest's
+// jsdom worker, and removes a module-level mutable singleton.
 const MAX_CONNECTIONS_PER_PUBKEY = 3;
-const openConnections = new Map(); // pubkey -> count
 
 function hashTokenHex(token) {
   return createHash('sha256').update(token).digest('hex');
@@ -55,6 +59,11 @@ export default function createInvitesRouter({
 } = {}) {
   const apiRouter = Router();
   const acceptRouter = Router();
+
+  // Per-router-instance SSE connection counter. Lives in this closure so
+  // separate router instances (e.g. two test apps in the same worker)
+  // don't share state. See the comment near MAX_CONNECTIONS_PER_PUBKEY.
+  const openConnections = new Map(); // connKey -> count
 
   // POST / always requires NIP-98 — there's no cookie path for minting.
   const nip98 = verifyNip98Middleware || ((_req, _res, next) => next());

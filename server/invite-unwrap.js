@@ -29,6 +29,11 @@ const KIND_AUTH_RESPONSE_OUTER = 29999;
 const KIND_AUTH_EVENT_INNER = 21236;
 
 export async function unwrapAuthResponse({ wrap, sessionPrivkey, expectedChallenge }) {
+  // Challenge verification is a load-bearing security check — refuse to run
+  // without one rather than silently letting any inner challenge through.
+  if (!expectedChallenge) {
+    return { ok: false, error: 'expected-challenge-missing' };
+  }
   if (!wrap || wrap.kind !== KIND_GIFT_WRAP) {
     return { ok: false, error: 'wrong-kind' };
   }
@@ -95,7 +100,7 @@ export async function unwrapAuthResponse({ wrap, sessionPrivkey, expectedChallen
   if (!challengeTag) {
     return { ok: false, error: 'challenge-tag-missing' };
   }
-  if (expectedChallenge && challengeTag !== expectedChallenge) {
+  if (challengeTag !== expectedChallenge) {
     return { ok: false, error: 'challenge-mismatch' };
   }
 

@@ -100,4 +100,14 @@ describe('unwrapAuthResponse', () => {
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/decrypt/);
   });
+
+  it('rejects when expectedChallenge is omitted (no silent skip)', async () => {
+    const result = await unwrapAuthResponse({
+      wrap: fixture.wrap,
+      sessionPrivkey: fixture.session_privkey,
+      // expectedChallenge intentionally omitted — must NOT bypass verification.
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe('expected-challenge-missing');
+  });
 });

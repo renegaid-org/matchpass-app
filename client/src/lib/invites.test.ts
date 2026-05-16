@@ -51,6 +51,8 @@ describe('subscribeToInvite', () => {
       addEventListener: (name: string, handler: (e: MessageEvent) => void) => {
         handlers.set(name, handler);
       },
+      onerror: null as null | (() => void),
+      readyState: 1,
       close: vi.fn(),
     };
     // vi.fn(() => obj) isn't usable as a constructor — use a factory function
@@ -67,5 +69,49 @@ describe('subscribeToInvite', () => {
 
     close();
     expect(mockEs.close).toHaveBeenCalled();
+  });
+
+  it('invokes onError when EventSource enters CLOSED state', () => {
+    const errors: Array<{ readyState: number }> = [];
+    const onEvent = vi.fn();
+    const onError = (err: { readyState: number }) => errors.push(err);
+    const handlers = new Map<string, (e: MessageEvent) => void>();
+    const mockEs = {
+      addEventListener: (name: string, handler: (e: MessageEvent) => void) => {
+        handlers.set(name, handler);
+      },
+      onerror: null as null | (() => void),
+      readyState: 2,  // EventSource.CLOSED — browser gave up reconnecting
+      close: vi.fn(),
+    };
+    global.EventSource = function () { return mockEs; } as unknown as typeof EventSource;
+    // console.warn is emitted on every error — silence it for the test.
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const close = subscribeToInvite('TOK', onEvent, onError);
+    expect(mockEs.onerror).toBeTypeOf('function');
+    mockEs.onerror!();
+    expect(errors).toEqual([{ readyState: 2 }]);
+    expect(warnSpy).toHaveBeenCalledOnce();
+
+    close();
+    warnSpy.mockRestore();
+  });
+
+  it('does not throw if onError is omitted', () => {
+    const mockEs = {
+      addEventListener: () => {},
+      onerror: null as null | (() => void),
+      readyState: 0,  // CONNECTING — auto-recovering
+      close: vi.fn(),
+    };
+    global.EventSource = function () { return mockEs; } as unknown as typeof EventSource;
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const close = subscribeToInvite('TOK', vi.fn());  // no onError
+    expect(() => mockEs.onerror!()).not.toThrow();
+
+    close();
+    warnSpy.mockRestore();
   });
 });

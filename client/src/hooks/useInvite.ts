@@ -26,6 +26,14 @@ export interface InviteState {
   personaPubkey?: string;
   displayName?: string;
   error?: string;
+  /**
+   * Set to true if the SSE stream entered the CLOSED state (browser gave up
+   * reconnecting after server restart / sustained network drop). The hook
+   * does NOT auto-retry — the consumer's UI should show a banner and prompt
+   * a refresh. Stays false while EventSource is auto-recovering from
+   * transient errors.
+   */
+  connectionLost?: boolean;
 }
 
 export interface AcceptedInvite {
@@ -111,20 +119,31 @@ export function useInvite() {
 
   useEffect(() => {
     if (!state.invite || state.status === 'consumed' || state.status === 'expired') return;
-    const close = subscribeToInvite(state.invite.invite_token, (e: InviteEvent) => {
-      if (e.type === 'accepted') {
-        setState(s => ({
-          ...s,
-          status: 'accepted',
-          personaPubkey: e.persona_pubkey,
-          displayName: e.display_name,
-        }));
-      } else if (e.type === 'consumed') {
-        setState(s => ({ ...s, status: 'consumed' }));
-      } else if (e.type === 'expired') {
-        setState(s => ({ ...s, status: 'expired' }));
-      }
-    });
+    const close = subscribeToInvite(
+      state.invite.invite_token,
+      (e: InviteEvent) => {
+        if (e.type === 'accepted') {
+          setState(s => ({
+            ...s,
+            status: 'accepted',
+            personaPubkey: e.persona_pubkey,
+            displayName: e.display_name,
+            connectionLost: false,
+          }));
+        } else if (e.type === 'consumed') {
+          setState(s => ({ ...s, status: 'consumed', connectionLost: false }));
+        } else if (e.type === 'expired') {
+          setState(s => ({ ...s, status: 'expired', connectionLost: false }));
+        }
+      },
+      (err) => {
+        // EventSource.CLOSED === 2. CONNECTING (0) means it'll auto-retry —
+        // don't surface that. Only flip the flag on terminal CLOSED.
+        if (err.readyState === 2) {
+          setState(s => ({ ...s, connectionLost: true }));
+        }
+      },
+    );
     return close;
   }, [state.invite, state.status]);
 

@@ -79,8 +79,19 @@ export async function cancelInvite(token: string, bearer: string): Promise<void>
  * Open an SSE stream for invite state changes. Auth rides a path-scoped
  * cookie set by the mint response (Task 13). `withCredentials: true` is a
  * no-op until that cookie lands.
+ *
+ * `onError` is invoked when EventSource enters the CLOSED state — i.e.
+ * after the browser gives up reconnecting (typically server restart with a
+ * fresh INVITE_SUBSCRIBE_SECRET, or sustained network drop). Transient
+ * errors that EventSource auto-recovers from are reported via `onError`
+ * too but do not close the stream, so the caller should branch on
+ * `es.readyState === EventSource.CLOSED` if it wants to distinguish.
  */
-export function subscribeToInvite(token: string, onEvent: (e: InviteEvent) => void): () => void {
+export function subscribeToInvite(
+  token: string,
+  onEvent: (e: InviteEvent) => void,
+  onError?: (err: { readyState: number }) => void,
+): () => void {
   const es = new EventSource(`/api/gate/invites/${token}/subscribe`, { withCredentials: true });
   // Server emits frames with `event: invite`, which the EventSource spec
   // routes to a named listener — `onmessage` only fires for frames with no
@@ -92,5 +103,13 @@ export function subscribeToInvite(token: string, onEvent: (e: InviteEvent) => vo
       /* ignore malformed */
     }
   });
+  es.onerror = () => {
+    // Surface the readyState so the caller can distinguish "auto-recovering"
+    // (CONNECTING = 0) from "given up" (CLOSED = 2). Logging covers the
+    // pilot case where we mostly want a forensic trail.
+    // eslint-disable-next-line no-console
+    console.warn('[invites] SSE error', { readyState: es.readyState });
+    if (onError) onError({ readyState: es.readyState });
+  };
   return () => es.close();
 }

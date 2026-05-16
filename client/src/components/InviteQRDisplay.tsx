@@ -49,6 +49,12 @@ export function InviteQRDisplay({ state, onClose, onCancel }: Props) {
         <QRCode value={state.invite.qr_payload} size={256} />
         <p className="muted">Status: Waiting for scan</p>
         <p className="muted">Expires in {fmtCountdown(remainingSeconds)}</p>
+        {state.connectionLost && (
+          <p className="muted" style={{ color: '#a33', marginTop: 8 }}>
+            Live status connection lost. Refresh this page to reconnect — the
+            invite itself is still valid until its expiry.
+          </p>
+        )}
         <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
           <button
             className="btn btn-secondary"

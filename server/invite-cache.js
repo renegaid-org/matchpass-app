@@ -61,9 +61,12 @@ export function createInviteCache({ now = () => Math.floor(Date.now() / 1000) } 
     const tokenHash = hashToken(token);
     const authChallenge = bytesToHex(randomBytes(32));
     const sk = generateSecretKey();
+    // Derive the pubkey from the live `sk` buffer BEFORE we hex-encode and
+    // wipe — otherwise we'd materialise a second, unwiped copy of the key
+    // material in the hex-decoded Buffer just to call getPublicKey on it.
+    const session_pubkey = getPublicKey(sk);
     const session_privkey = bytesToHex(sk);
     sk.fill(0);
-    const session_pubkey = getPublicKey(Buffer.from(session_privkey, 'hex'));
 
     const record = {
       club_pubkey: clubPubkey,

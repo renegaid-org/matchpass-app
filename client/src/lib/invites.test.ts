@@ -40,11 +40,17 @@ describe('createInvite', () => {
 });
 
 describe('subscribeToInvite', () => {
-  it('opens EventSource and dispatches events', () => {
+  it('opens EventSource and dispatches named "invite" events', () => {
     const events: unknown[] = [];
     const onEvent = (e: unknown) => events.push(e);
-    const mockEs: { onmessage: ((e: MessageEvent) => void) | null; close: () => void } = {
-      onmessage: null,
+    // The server emits `event: invite\ndata: …\n\n` SSE frames. The spec
+    // routes those to addEventListener('invite', …), NOT to onmessage. The
+    // mock has to mirror that contract or the test would mask the bug.
+    const handlers = new Map<string, (e: MessageEvent) => void>();
+    const mockEs = {
+      addEventListener: (name: string, handler: (e: MessageEvent) => void) => {
+        handlers.set(name, handler);
+      },
       close: vi.fn(),
     };
     // vi.fn(() => obj) isn't usable as a constructor — use a factory function
@@ -52,7 +58,9 @@ describe('subscribeToInvite', () => {
     global.EventSource = function () { return mockEs; } as unknown as typeof EventSource;
 
     const close = subscribeToInvite('TOK', onEvent);
-    mockEs.onmessage?.({
+    const inviteHandler = handlers.get('invite');
+    expect(inviteHandler).toBeDefined();
+    inviteHandler?.({
       data: JSON.stringify({ type: 'accepted', persona_pubkey: 'cc' }),
     } as MessageEvent);
     expect(events).toEqual([{ type: 'accepted', persona_pubkey: 'cc' }]);

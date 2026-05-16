@@ -73,12 +73,15 @@ export async function cancelInvite(token: string, bearer: string): Promise<void>
  */
 export function subscribeToInvite(token: string, onEvent: (e: InviteEvent) => void): () => void {
   const es = new EventSource(`/api/gate/invites/${token}/subscribe`, { withCredentials: true });
-  es.onmessage = (e) => {
+  // Server emits frames with `event: invite`, which the EventSource spec
+  // routes to a named listener — `onmessage` only fires for frames with no
+  // event field, so a plain assignment would silently drop every transition.
+  es.addEventListener('invite', (e: MessageEvent) => {
     try {
       onEvent(JSON.parse(e.data) as InviteEvent);
     } catch {
       /* ignore malformed */
     }
-  };
+  });
   return () => es.close();
 }

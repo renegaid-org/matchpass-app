@@ -15,6 +15,7 @@ vi.mock('../hooks/useInvite', () => ({
   useInvite: () => ({
     state: mocks.state,
     mint: mocks.mintMock,
+    cancel: vi.fn(),
   }),
 }));
 

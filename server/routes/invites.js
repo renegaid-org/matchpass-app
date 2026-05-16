@@ -78,6 +78,21 @@ export default function createInvitesRouter({
     return res.json({ invites });
   });
 
+  // DELETE /:token — Admin-initiated invite cancel. Removes the cache entry
+  // immediately, regardless of phase (pending or accepted). Strictly scoped:
+  // 404 (not 403) for unknown tokens prevents probing, but a real token owned
+  // by a different club returns 403. Returns 204 with no body on success.
+  apiRouter.delete('/:token', nip98, (req, res) => {
+    const { token } = req.params;
+    const rec = cache.getByToken(token);
+    if (!rec) return res.status(404).json({ error: 'invite not found' });
+    if (rec.club_pubkey !== req.staff?.clubPubkey) {
+      return res.status(403).json({ error: 'forbidden' });
+    }
+    cache.cancel(token);
+    return res.status(204).end();
+  });
+
   apiRouter.post('/', nip98, (req, res) => {
     const { role, staff_expires_at, display_name } = req.body || {};
     if (!role) return res.status(400).json({ error: 'role required' });

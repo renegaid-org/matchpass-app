@@ -24,10 +24,10 @@ export function AddStaffWizard({ onClose }: Props) {
   const [role, setRole] = useState<InviteRole>('gate_steward');
   const [expiryPreset, setExpiryPreset] = useState(1);
   const [displayName, setDisplayName] = useState('');
-  const { state, mint } = useInvite();
+  const { state, mint, cancel } = useInvite();
 
   if (state.status !== 'idle' && state.invite) {
-    return <InviteQRDisplay state={state} onClose={onClose} />;
+    return <InviteQRDisplay state={state} onClose={onClose} onCancel={cancel} />;
   }
 
   const handleGenerate = () => {

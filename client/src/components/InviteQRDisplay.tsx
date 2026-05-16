@@ -5,6 +5,13 @@ import { QRCode } from './QRCode';
 interface Props {
   state: InviteState;
   onClose: () => void;
+  /**
+   * Server-side cancel. The Cancel button calls this first (DELETE
+   * /api/gate/invites/:token) and then closes the modal. Without this, the
+   * cache entry would linger until its 15-minute TTL even though the staff
+   * manager has clearly abandoned it.
+   */
+  onCancel?: () => Promise<void>;
 }
 
 function fmtCountdown(secs: number): string {
@@ -13,8 +20,9 @@ function fmtCountdown(secs: number): string {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-export function InviteQRDisplay({ state, onClose }: Props) {
+export function InviteQRDisplay({ state, onClose, onCancel }: Props) {
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
+  const [cancelling, setCancelling] = useState(false);
   useEffect(() => {
     const i = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
     return () => clearInterval(i);
@@ -22,6 +30,17 @@ export function InviteQRDisplay({ state, onClose }: Props) {
 
   if (!state.invite) return null;
   const remainingSeconds = Math.max(0, state.invite.pending_expires_at - now);
+
+  const handleCancel = async () => {
+    if (cancelling) return;
+    setCancelling(true);
+    try {
+      if (onCancel) await onCancel();
+    } finally {
+      setCancelling(false);
+      onClose();
+    }
+  };
 
   if (state.status === 'pending') {
     return (
@@ -37,8 +56,12 @@ export function InviteQRDisplay({ state, onClose }: Props) {
           >
             Copy link
           </button>
-          <button className="btn btn-secondary" onClick={onClose}>
-            Cancel
+          <button
+            className="btn btn-secondary"
+            onClick={handleCancel}
+            disabled={cancelling}
+          >
+            {cancelling ? 'Cancelling…' : 'Cancel'}
           </button>
         </div>
       </div>

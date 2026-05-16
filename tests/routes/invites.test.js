@@ -78,6 +78,21 @@ async function post(app, path, body) {
   }
 }
 
+async function del(app, path) {
+  const server = app.listen(0);
+  const port = server.address().port;
+  try {
+    const res = await fetch(`http://localhost:${port}${path}`, {
+      method: 'DELETE',
+    });
+    // 204 has no body; other statuses may
+    const body = res.status === 204 ? null : await res.json().catch(() => null);
+    return { status: res.status, body };
+  } finally {
+    server.close();
+  }
+}
+
 // Streaming helper: opens an SSE subscription, runs `whileOpen()` once the
 // stream is established, then resolves with the first parsed `event: invite`
 // payload (or rejects on the 3-second timeout). Matches the bespoke
@@ -475,6 +490,56 @@ describe('GET /api/gate/invites/accepted', () => {
     } finally {
       server.close();
     }
+  });
+});
+
+describe('DELETE /api/gate/invites/:token', () => {
+  it('removes a pending invite from the cache and returns 204', async () => {
+    const { app, cache } = makeApp();
+    const minted = cache.mint({
+      clubPubkey: 'aa'.repeat(32),
+      inviterPubkey: 'bb'.repeat(32),
+      role: 'gate_steward',
+    });
+    expect(cache.getByToken(minted.invite_token)).not.toBeNull();
+
+    const res = await del(app, `/api/gate/invites/${minted.invite_token}`);
+    expect(res.status).toBe(204);
+    expect(cache.getByToken(minted.invite_token)).toBeNull();
+  });
+
+  it('also removes an accepted invite (manual cancel in either phase)', async () => {
+    const { app, cache } = makeApp();
+    const minted = cache.mint({
+      clubPubkey: 'aa'.repeat(32),
+      inviterPubkey: 'bb'.repeat(32),
+      role: 'gate_steward',
+    });
+    cache.acceptBySessionPubkey(minted.session_pubkey, 'cc'.repeat(32));
+
+    const res = await del(app, `/api/gate/invites/${minted.invite_token}`);
+    expect(res.status).toBe(204);
+    expect(cache.getByToken(minted.invite_token)).toBeNull();
+  });
+
+  it('returns 404 for an unknown token', async () => {
+    const { app } = makeApp();
+    const res = await del(app, '/api/gate/invites/never-existed');
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 403 when the caller is not the club that owns the invite', async () => {
+    // Mint into a different club, then DELETE from the makeApp stub (clubPubkey aa).
+    const { app, cache } = makeApp();
+    const minted = cache.mint({
+      clubPubkey: 'dd'.repeat(32), // different club
+      inviterPubkey: 'bb'.repeat(32),
+      role: 'gate_steward',
+    });
+    const res = await del(app, `/api/gate/invites/${minted.invite_token}`);
+    expect(res.status).toBe(403);
+    // And the record must NOT have been removed by the failed attempt.
+    expect(cache.getByToken(minted.invite_token)).not.toBeNull();
   });
 });
 

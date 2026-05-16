@@ -58,12 +58,21 @@ export async function createInvite(params: CreateInviteParams): Promise<InviteMi
 }
 
 /**
- * No-op for the pilot. Invites naturally expire after 15 minutes; a real
- * cancel route lands in a follow-up if pilot feedback demands it.
+ * Cancel an invite — calls DELETE /api/gate/invites/:token. The server
+ * removes the cache entry regardless of whether the invite is still pending
+ * or already accepted; the spec says "Admin can manually cancel an invite
+ * in either phase via the PWA". Throws on non-2xx so the caller can surface
+ * the error to the UI.
  */
 export async function cancelInvite(token: string, bearer: string): Promise<void> {
-  void token;
-  void bearer;
+  const res = await fetch(`/api/gate/invites/${token}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Nostr ${bearer}` },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` })) as { error?: string };
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
 }
 
 /**

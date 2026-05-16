@@ -11,6 +11,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   createInvite,
+  cancelInvite,
   subscribeToInvite,
   type InviteRole,
   type InviteEvent,
@@ -127,5 +128,22 @@ export function useInvite() {
     return close;
   }, [state.invite, state.status]);
 
-  return { state, mint };
+  // Manual cancel — hits DELETE /api/gate/invites/:token then resets hook
+  // state to idle so the UI returns to a clean slate. Caller (the QR card's
+  // Cancel button) is expected to close its own modal AFTER this resolves.
+  const cancel = useCallback(async () => {
+    if (!signer || !state.invite) return;
+    try {
+      const token = state.invite.invite_token;
+      const fullUrl = `${window.location.origin}/api/gate/invites/${token}`;
+      const authHeader = await buildNip98AuthHeader('DELETE', fullUrl, undefined, signer);
+      const bearer = authHeader.startsWith('Nostr ') ? authHeader.slice(6) : authHeader;
+      await cancelInvite(token, bearer);
+      setState({ invite: null, status: 'idle' });
+    } catch (err) {
+      setState(s => ({ ...s, status: 'error', error: (err as Error).message }));
+    }
+  }, [signer, state.invite]);
+
+  return { state, mint, cancel };
 }
